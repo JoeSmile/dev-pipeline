@@ -1,0 +1,17 @@
+---
+description: Use Superpowers for requirement decomposition and reviewable implementation plans
+alwaysApply: true
+---
+
+# Superpowers planning
+
+- Follow the shared project instructions in `AGENTS.md`. Cursor and Codex use the same sequence.
+- Use Superpowers `brainstorming` and `writing-plans` for requirement decomposition and task design. Read the actual skills and `plans/TASK-WRITING.md` for project-specific integration.
+- Write the module-level business requirement and record it on the Jira Story or Task before any technical spec. The user confirms that requirement before a spec, plan, or production code. Epic means one business capability. Stage names are labels, not Epics. Story and Task are siblings under an Epic. Use a blocks link only when one ticket cannot start until another is done.
+- Before writing production code for a task: settle the technical approach in discussion, then record it in `plans/superpowers/` and the task's selected approach. Do not start implementation while that discussion is open or the approach is unrecorded.
+- After implementation, review the diff before reporting the task. Important issues change the agreed approach, acceptance, data, or permission boundary: stop and ask the user. Fix every other confirmed defect directly and add a regression test.
+- Use `.cursor/rules/review-after-code.mdc` for the rest of the review procedure.
+- Each task needs a selected technical approach, clear interfaces, risk handling, independent verification, and a focused human review boundary. Do not replace Superpowers with a competing local workflow.
+- A plan that holds a lock across network or file I/O must fill in the lock checklist in `plans/TASK-WRITING.md` before the plan is treated as settled.
+- Command plans must also apply the command-and-result checks in that file: full effect of the command, preview versus apply, public errors versus unknown results, and who is allowed to write.
+- Jira is the only status and dependency source. Do not maintain a local TASKS mirror, and do not silently replace an agreed approach with a model's preferred architecture.

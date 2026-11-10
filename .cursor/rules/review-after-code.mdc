@@ -1,0 +1,15 @@
+---
+description: Review code and directly fix acceptance defects before reporting completion
+alwaysApply: true
+---
+
+# Review after code changes
+
+After implementing or fixing code, review the diff before handing it back.
+
+- Important issues change the agreed approach, acceptance, data, or permission boundary. Stop and let the user decide. Do not implement that change while waiting.
+- Fix every other confirmed defect directly. Add a regression test, run the relevant checks, and review the final diff. Report remaining limitations and blockers candidly.
+- Ask only when necessary information or a product decision is missing and cannot be resolved from the specification or existing authorization; continue independent work while waiting.
+- Record causes, fixes, and verification in the corresponding Jira issue when requested. If the connector fails, report the failure instead of claiming synchronization.
+- Do not edit plan files unless the user explicitly authorizes plan changes.
+- Do not commit or push a review-driven fix unless the user already asked to commit.

@@ -1,0 +1,50 @@
+---
+description: 遵循 Martin Fowler《重构：改善既有代码的设计》约束，禁止输出低质量垃圾代码
+globs: ["**/*.py","**/*.ts","**/*.go"]
+alwaysApply: true
+---
+# 重构约束 · Fowler Refactoring 规范
+## 核心原则
+1. 重构的第一准则：**行为不变**；任何修改不能改变外部可观测逻辑，如果要改功能，明确区分重构和需求变更。
+2. 采用微小、安全、可单独验证的重构步骤，禁止一次性大规模重写。
+3. 优先级：可读性 > 可维护性 > 性能；性能优化必须基于 profiling 证据，禁止过早优化。
+4. 不强行套设计模式，不为抽象而抽象；拒绝无意义过度设计。
+
+## 代码坏味道检查（输出前自查）
+生成/重构代码前，主动识别并消除下面坏味道：
+- 重复代码 Duplicated Code
+- 过长函数 Long Method（Python 建议上限30行，一屏可视）
+- 过大类 Large Class、职责混杂（违反SRP单一职责）
+- 长参数列表 Long Parameter List，超过4个优先打包成参数对象
+- 特征依恋 Feature Envy：逻辑大量读取别的对象数据，逻辑应当迁移到数据归属方
+- 基本类型偏执 Primitive Obsession：禁止裸 str/int 表达业务状态，优先枚举、值对象
+- 多层嵌套 if / elif 大开关、魔法字符串、魔法数字
+- 临时字段、数据泥团、到处结伴传递的一组变量
+- 用注释解释实现细节；代码应当自解释，注释只写业务约束/为什么
+
+## 允许使用的标准重构手法（严格使用 Fowler 原版命名）
+Extract Function / Inline Function / Extract Variable
+Introduce Parameter Object / Move Function
+Replace Conditional with Polymorphism
+Replace Primitive with Object
+Hide Delegate / Remove Middle Man
+
+## 【Temporal 专属附加约束（本项目重点）】
+1. Workflow 必须保持确定性：随机、网络IO、数据库访问、本地时间读取，**一律放到 Activity**，Workflow 只做编排、等待、Timer、Signal、调用Activity。
+2. Workflow 主体尽量薄：只负责流程编排，业务校验、组装、规则计算下沉到 Activity / 领域值对象。
+3. Workflow 中遇到连续的“校验失败即结束”分支时，优先提取为纯校验函数，返回结构化原因或终止结果；调用处保留一次清晰的早返回，避免把结束路径复制多份。
+   - 校验函数只做确定性规则判断，不执行 I/O、不修改 Workflow 状态、不隐藏 Activity 调用。
+   - 提取后必须保持关键状态转换和 Activity 边界在主流程中可见，不能用万能 `process_*` 函数把“结束、继续、执行工具”等不同路径全部藏起来。
+   - 先合并同类非法输入/失败原因；成功结束、继续下一步、等待 Signal 等不同业务路径仍应保持明确分支。
+   - 重构前后保持错误语义、返回值、重试边界和 Event History 行为不变，并为纯校验函数补充边界测试。
+4. 区分 Timer 循环 和 Schedule：
+   - 固定日历定时任务优先使用 Schedule（一等公民调度），不要手写长循环 workflow + sleep 替代 cron 调度
+   - 相对延时、轮次需要共享状态，才使用 workflow 内部 timer 循环
+5. 禁止把调度配置、告警模板、业务规则硬编码写死在 workflow 内部。
+6. 禁止把 LLM 循环或写码过程塞进 Workflow 函数。
+
+## 输出格式约定（你给我代码重构时自动遵守）
+1. 先列出识别出来的坏味道清单
+2. 写明本次采用的重构手法名称
+3. 给出重构前后对比代码
+4. 附带等价校验思路/测试用例，证明行为没有变化

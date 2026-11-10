@@ -1,0 +1,12 @@
+---
+description: Draw architecture, flow, and sequence diagrams with Archify
+alwaysApply: true
+---
+
+# Diagrams use Archify
+
+When the user asks for an architecture, flowchart, sequence, data-flow, lifecycle, state, entity-relationship, or similar diagram:
+
+- Use the Archify skill. Read its current skill file and follow it.
+- Do not hand-write SVG, Mermaid, or HTML as the diagram.
+- Discussion can stay in text until a diagram is requested. Once it is requested, produce it with Archify.

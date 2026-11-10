@@ -1,0 +1,47 @@
+[project]
+name = "dev-pipeline"
+version = "0.0.0"
+description = "Temporal-orchestrated AI-native coding and review pipeline"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "temporalio",
+    "pydantic>=2,<3",
+    "pydantic-settings",
+    "structlog",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dev_pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = ["plans"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src/dev_pipeline"]
+mypy_path = "src"
