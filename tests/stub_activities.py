@@ -23,6 +23,18 @@ from dev_pipeline.models import (
 from dev_pipeline.transitions import validate_publish_target
 
 
+async def _await_gate(event: asyncio.Event) -> None:
+    """Wait for a test gate, heartbeating so workflow cancellation can land."""
+    while not event.is_set():
+        if activity.is_cancelled():
+            raise asyncio.CancelledError()
+        activity.heartbeat()
+        try:
+            await asyncio.wait_for(event.wait(), timeout=0.05)
+        except TimeoutError:
+            continue
+
+
 @dataclass
 class StubController:
     """Per-test switches and gates for stub activities."""
@@ -37,6 +49,9 @@ class StubController:
     publish_succeeds: bool = True
     publish_address: str = "http://test.local/stub"
     started: list[str] = field(default_factory=list)
+    reviewed: list[str] = field(default_factory=list)
+    publish_calls: int = 0
+    implement_fail_remaining: dict[str, int] = field(default_factory=dict)
 
     def gate(self, kind: str, ticket_id: str) -> asyncio.Event:
         store = {
@@ -77,24 +92,30 @@ class StubController:
         @activity.defn(name="implement_ticket")
         async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
             controller.started.append(payload.ticket_id)
+            remaining = controller.implement_fail_remaining.get(payload.ticket_id, 0)
+            if remaining > 0:
+                controller.implement_fail_remaining[payload.ticket_id] = remaining - 1
+                raise RuntimeError(f"implement failed: {payload.ticket_id}")
             if payload.ticket_id in controller.implement_errors:
                 raise RuntimeError(f"implement failed: {payload.ticket_id}")
-            await controller.gate("implement", payload.ticket_id).wait()
+            await _await_gate(controller.gate("implement", payload.ticket_id))
             return ImplementResult(diff_submitted=True, detail="test-implement")
 
         @activity.defn(name="review_ticket")
         async def review_ticket(payload: TicketWorkInput) -> ReviewFindings:
-            await controller.gate("review", payload.ticket_id).wait()
+            controller.reviewed.append(payload.ticket_id)
+            await _await_gate(controller.gate("review", payload.ticket_id))
             return controller.review_findings.get(payload.ticket_id, ReviewFindings(info=["ok"]))
 
         @activity.defn(name="verify_ticket")
         async def verify_ticket(payload: TicketWorkInput) -> VerifyResult:
-            await controller.gate("verify", payload.ticket_id).wait()
+            await _await_gate(controller.gate("verify", payload.ticket_id))
             passed = controller.verify_passed.get(payload.ticket_id, True)
             return VerifyResult(passed=passed, evidence="test-evidence")
 
         @activity.defn(name="publish_to_test_env")
         async def publish_to_test_env(request: PublishRequest) -> PublishResult:
+            controller.publish_calls += 1
             validate_publish_target(request.target)
             if not controller.publish_succeeds:
                 return PublishResult(status="failed", address="", detail="test-deploy-failed")

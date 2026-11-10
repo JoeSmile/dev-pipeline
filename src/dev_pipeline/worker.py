@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 from dataclasses import dataclass
+
+import structlog
 
 from dev_pipeline.activities import STUB_ACTIVITIES
 from dev_pipeline.config_root import validate_config_root_path
-from dev_pipeline.constants import DEFAULT_TASK_QUEUE, DEFAULT_TEMPORAL_TARGET
+from dev_pipeline.constants import (
+    CLIENT_CONNECT_TIMEOUT,
+    DEFAULT_TASK_QUEUE,
+    DEFAULT_TEMPORAL_TARGET,
+)
 from dev_pipeline.errors import ConfigRootError
 from dev_pipeline.workflows import WORKFLOWS
+
+logger = structlog.get_logger("dev_pipeline.worker")
 
 _MISSING_CONFIG_ROOT = (
     "配置根目录是必填参数，不能省略，也不会回退到当前目录或默认路径。请传入 --config-root。"
@@ -20,13 +27,28 @@ _MISSING_CONFIG_ROOT = (
 
 @dataclass(frozen=True)
 class WorkerArgs:
+    """CLI arguments for the local Temporal worker process.
+
+    Attributes:
+        config_root: Existing absolute directory for pipeline config.
+        temporal_target: Temporal server address.
+        task_queue: Task queue the worker polls.
+    """
+
     config_root: str
     temporal_target: str
     task_queue: str
 
 
 def parse_worker_args(argv: list[str] | None = None) -> WorkerArgs:
-    """Parse CLI arguments. --config-root has no default and is required."""
+    """Parse CLI arguments. --config-root has no default and is required.
+
+    Args:
+        argv: Optional CLI arguments; defaults to ``sys.argv[1:]``.
+
+    Returns:
+        Parsed worker arguments with a non-empty config-root string.
+    """
 
     parser = argparse.ArgumentParser(
         prog="dev-pipeline-worker",
@@ -58,34 +80,48 @@ def parse_worker_args(argv: list[str] | None = None) -> WorkerArgs:
 
 
 async def run_worker(args: WorkerArgs) -> None:
-    """Validate config-root first, then connect to Temporal and run the worker."""
+    """Validate config-root first, then connect to Temporal and run the worker.
+
+    Args:
+        args: Parsed CLI arguments, including a required config-root path.
+    """
 
     # Imported lazily so unit tests can parse args without a Temporal runtime.
     from temporalio.client import Client
     from temporalio.worker import Worker
 
     config_root = validate_config_root_path(args.config_root)
-    client = await Client.connect(args.temporal_target)
+    client = await Client.connect(
+        args.temporal_target,
+        connect_timeout=CLIENT_CONNECT_TIMEOUT,
+    )
     worker = Worker(
         client,
         task_queue=args.task_queue,
         workflows=list(WORKFLOWS),
         activities=list(STUB_ACTIVITIES),
     )
-    print(
-        f"dev-pipeline worker 已连接 {args.temporal_target}，"
-        f"task_queue={args.task_queue}，config_root={config_root}",
-        flush=True,
+    logger.info(
+        "dev-pipeline worker 已连接",
+        temporal_target=args.temporal_target,
+        task_queue=args.task_queue,
+        config_root=config_root,
     )
     await worker.run()
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Start the worker, or exit with code 2 if config-root is invalid.
+
+    Args:
+        argv: Optional CLI arguments; defaults to ``sys.argv[1:]``.
+    """
+
     try:
         args = parse_worker_args(argv)
         asyncio.run(run_worker(args))
     except ConfigRootError as exc:
-        print(str(exc), file=sys.stderr)
+        logger.error(str(exc))
         raise SystemExit(2) from exc
 
 

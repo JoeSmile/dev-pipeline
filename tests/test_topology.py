@@ -15,7 +15,6 @@ def _snap(
     return TicketSnapshot(
         ticket_id=ticket_id,
         stage=stage,
-        required=True,
         depends_on=depends_on or [],
         started=started,
     )

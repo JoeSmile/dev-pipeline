@@ -20,11 +20,15 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 父 Workflow `DevPipelineWorkflow` 只管阶段、门禁、Jira 同步、预算与幂等。一条父执行对应一张 Story。写码、RAG、双 Review、验证是 Activity 或 Child，不把 agent loop 写进 Workflow。每张实现 Ticket 由独立、可幂等的 Child（`TicketWorkflow`，幂等键 `ticket_id + execution_id`）执行。
 
-`Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying` 循环发生在 Child 上；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待，直到全部必做 Ticket 验证过线。Coding Worker 只碰授权 worktree；Review Worker 默认只读 diff。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
+Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；Review Worker 默认只读 diff。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
 
-多 Ticket 按依赖拓扑执行：无依赖可并行；有依赖的 Ticket 不得提前开工。单张失败不自动取消同 Story 其他未受影响的 Ticket，但 Story 不能进入 `TestDeploying` 或 `Retro`，直到失败被处理（重试、人工从清单中移除，或 `abort`）。
+多 Ticket 按依赖拓扑执行：无依赖可并行；有依赖的 Ticket 不得提前开工（Child 直接启动且依赖未过线时停在 `Pending`）。单张失败不自动取消同 Story 其他未受影响的 Ticket，但 Story 不能进入 `TestDeploying` 或 `Retro`，直到失败被处理（重试、人工 `drop_ticket`，或 `abort`）。
 
 ## 流程状态机
+
+父执行与 Child 是两台状态机，不要画在同一张图里。父执行进入 `TestDeploying` 的边是 `Implementing → TestDeploying`，不是 `Verifying --> TestDeploying`。
+
+### 父 Workflow（Story）
 
 ```mermaid
 stateDiagram-v2
@@ -35,25 +39,48 @@ stateDiagram-v2
     SchemeDecided --> TicketsReady: 无高危假设
     Spike --> TicketsReady: 最小验证过
     Spike --> Blocked: 击穿红线且无防护
-    TicketsReady --> Implementing: 派 Coding Worker
+    TicketsReady --> Implementing: 派 Coding Worker（Child）
+    Implementing --> TestDeploying: 全部未移除 Ticket 过线且已授权测试发布
+    TestDeploying --> Retro: 测试环境发布成功
+    TestDeploying --> Blocked: 测试部署失败
+    Retro --> Done: daily+candidate 已写
+    Intake --> Blocked: abort
+    ScopeLocked --> Blocked: abort
+    SchemeDecided --> Blocked: abort
+    Spike --> Blocked: abort
+    TicketsReady --> Blocked: abort
+    Implementing --> Blocked: abort
+    TestDeploying --> Blocked: abort
+    Retro --> Blocked: abort
+    Blocked --> [*]
+    Done --> [*]
+```
+
+### Child Workflow（Ticket）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    Pending --> Implementing: 依赖已过线
     Implementing --> Reviewing: diff 提交
     Reviewing --> HumanGate: 阻断/范式漂移
     Reviewing --> Verifying: 仅建议/信息
     HumanGate --> Implementing: 人改完续跑
     HumanGate --> Verifying: 人放行
     HumanGate --> Blocked: 人否决
-    Verifying --> TestDeploying: 全部必做 Ticket 验证过线
     Verifying --> Implementing: 验证未守住红线
-    TestDeploying --> Retro: 测试环境发布成功
-    TestDeploying --> Blocked: 测试部署失败
-    Retro --> Done: daily+candidate 已写
-    Blocked --> [*]
-    Done --> [*]
+    Verifying --> Verified: 过线证据齐
+    Implementing --> Failed: activity 失败
+    Reviewing --> Failed: activity 失败
+    Verifying --> Failed: activity 失败
+    Failed --> Implementing: retry_ticket
+    Blocked --> Implementing: retry_ticket
+    Verified --> [*]
 ```
 
-上图中 `Implementing` / `Reviewing` / `HumanGate` / `Verifying` 循环发生在 Child Workflow 上，父执行在聚合阶段 `Implementing` 等待。阻断项打回须经 `HumanGate`（`review_override` 打回），不能从 `Reviewing` 自动跳过门禁回到 `Implementing`。`Reviewing` 若仅有建议/信息，可直接 `Verifying`；有阻断项或范式漂移必须 `HumanGate`。验证未守住红线则回到 `Implementing`。
+阻断项打回须经 `HumanGate`（`review_override` 打回），不能从 `Reviewing` 自动跳过门禁回到 `Implementing`。`Reviewing` 若仅有建议/信息，可直接 `Verifying`；有阻断项或范式漂移必须 `HumanGate`。验证未守住红线则回到 `Implementing`。Child 在依赖未过线时停在 `Pending`，不得直接进入 `Implementing`。
 
-全部必做 Ticket 验证过线后，父执行进入已锁定名称的 `TestDeploying`（2026-11-10 锁定，规则见 [DP-43](https://weiperfect007.atlassian.net/browse/DP-43)）。只有测试部署成功才允许进入 `Retro`；测试部署失败不得进入 `Retro`。不存在生产部署转移。可进入 `Blocked`：红线被击穿且无防护、测试部署失败，或人工否决 / `abort`。
+全部未移除 Ticket 验证过线后，父执行仍停在聚合阶段 `Implementing`，等候人工 Signal `authorize_test_deploy`。授权后进入已锁定名称的 `TestDeploying`（2026-11-10 锁定，规则见 [DP-43](https://weiperfect007.atlassian.net/browse/DP-43)）并发布到测试环境。没有该 Signal 不得发布，也不得进入 `Retro`。只有测试部署成功才允许进入 `Retro`；测试部署失败不得进入 `Retro`。不存在生产部署转移。可进入 `Blocked`：红线被击穿且无防护、测试部署失败，或人工否决 / `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`。
 
 ## 阶段契约
 
@@ -64,11 +91,11 @@ stateDiagram-v2
 | SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录；假设清单（红线级 / 局部）；全局 vs 局部 vs 候选 |
 | Spike（可选） | 红线级假设 | 半小时～半天可证伪结果；失败则 Blocked 或补防护 |
 | TicketsReady | 已拍方案 | Ticket 清单：目标、验收、依赖、I/O 契约 |
-| Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环 |
+| Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环；全部未移除 Ticket 过线后等候 authorize_test_deploy |
 | Reviewing | diff + L0 + 本 Story 局部约束 | 双 Agent 并行：阻断 / 建议 / 信息 + 引用规则条文；无新证据就停 |
 | HumanGate | 仅阻断项或跨模块/范式漂移 | 放行 / 打回 / 否决（Signal） |
-| Verifying | 验收步骤 + L0 红线 | 「红线 ↔ 证据」至少一行；命令/现象可复现。全部必做 Ticket 过线后由父执行进入 `TestDeploying`，而不是直接 Retro |
-| TestDeploying | 全部必做 Ticket 已验证过线 | 测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
+| Verifying | 验收步骤 + L0 红线 | 「红线 ↔ 证据」至少一行；命令/现象可复现。全部未移除 Ticket 过线且已授权后，由父执行从聚合 `Implementing` 进入 `TestDeploying`，而不是直接 Retro |
+| TestDeploying | 全部未移除 Ticket 已验证过线，且已收到 `authorize_test_deploy` | 测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
 | Retro | 当日证据（git、Jira、Codex session、评审）与成功的测试部署 | `docs/knowledge/daily/YYYY-MM-DD.md`；candidate 更新；全局草案等签批 |
 
 ## 人工 Signal
@@ -78,10 +105,12 @@ stateDiagram-v2
 - `lock_scope` / `decide_scheme`：锁范围、拍方案
 - `approve_spike`：高危假设是否接受防护后继续
 - `review_override`：阻断项或范式漂移放行/打回/否决
+- `authorize_test_deploy`：全部未移除 Ticket 过线后，确认测试环境发布
 - `promote_rule`：候选升 L0 / 全局 Skill（默认禁止自动升；本骨架仅记录请求，自动晋升一律拒绝）
+- `retry_ticket` / `drop_ticket`：重试失败 Ticket，或把它从清单中移除
 - `abort` / `reopen`：中止或重开同一 Ticket / Story（必须开新 execution，不复用已乱掉的一次）
 
-`abort` 会把父执行带入 `Blocked` 并留下可回放记录。本骨架尚未回收 worktree / 处理远程 PR（后续票）。`reopen` 在同一次执行上会被拒绝。
+`abort` 会取消仍在运行的 Child，把父执行带入 `Blocked`，并留下可回放记录。本骨架尚未回收 worktree / 处理远程 PR（后续票）。`reopen` 在同一次执行上会被拒绝。
 
 ## 硬约束（L0，2026-11-10 冻结）
 

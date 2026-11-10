@@ -6,16 +6,59 @@
 
 ## 父与 Child
 
+父执行与 Child 是两台状态机。父执行进入 `TestDeploying` 的边是 `Implementing → TestDeploying`，不是 `Verifying --> TestDeploying`。
+
+### 父 Workflow（Story）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Intake
+    Intake --> ScopeLocked: lock_scope
+    ScopeLocked --> SchemeDecided: decide_scheme
+    SchemeDecided --> Spike: high_risk_assumption
+    SchemeDecided --> TicketsReady: no_high_risk_assumption
+    Spike --> TicketsReady: approve_spike_accept
+    Spike --> Blocked: approve_spike_reject / red_line_fail
+    TicketsReady --> Implementing: start_eligible_children
+    Implementing --> TestDeploying: authorize_test_deploy
+    TestDeploying --> Retro: test_deploy_success
+    TestDeploying --> Blocked: test_deploy_failure
+    Retro --> Done: retro_written
+    Implementing --> Blocked: abort
+    Blocked --> [*]
+    Done --> [*]
+```
+
 - 父执行阶段：`Intake` → `ScopeLocked` → `SchemeDecided` →（可选 `Spike`）→ `TicketsReady` → 聚合 `Implementing` → `TestDeploying` → `Retro` → `Done`，或在门禁失败 / `abort` / 测试部署失败时进入 `Blocked`。
-- Child（`TicketWorkflow`）循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。仅建议/信息可从 `Reviewing` 直达 `Verifying`。验证失败回到 `Implementing`。
-- 只要仍有必做 Ticket 处于 `Implementing` / `Reviewing` / `HumanGate` / `Verifying`，或失败尚未处理，父执行不得进入 `TestDeploying` 或 `Retro`。
-- 合法路径在全部必做 Ticket 验证过线后进入 `TestDeploying`。只有测试部署成功才允许 `Retro`。测试部署失败不得进入 `Retro`。不存在生产部署转移。
+- 启动清单里的每张 Ticket 都是必做的。只有启动后的 `drop_ticket` 能把它从清单中移除；被移除的 Ticket 不再阻挡 `TestDeploying` / `Retro`。
+- 只要仍有未移除 Ticket 处于 `Pending` / `Implementing` / `Reviewing` / `HumanGate` / `Verifying`，或失败尚未处理，父执行不得进入 `TestDeploying` 或 `Retro`。
+- 全部未移除 Ticket 验证过线后，父执行仍停在聚合 `Implementing`，查询快照提示正在等候 `authorize_test_deploy`。没有该 Signal 不得发布，也不得进入 `Retro`。授权后进入 `TestDeploying`。只有测试部署成功才允许 `Retro`。测试部署失败不得进入 `Retro`。不存在生产部署转移。
+
+### Child Workflow（Ticket）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    Pending --> Implementing: dependencies_satisfied
+    Implementing --> Reviewing: diff_submitted
+    Reviewing --> HumanGate: blocking_or_paradigm_drift
+    Reviewing --> Verifying: advisory_only
+    HumanGate --> Implementing: review_override_rework
+    HumanGate --> Verifying: review_override_approve
+    HumanGate --> Blocked: review_override_reject
+    Verifying --> Implementing: verify_failed
+    Verifying --> Verified: verify_passed
+    Verified --> [*]
+```
+
+- Child（`TicketWorkflow`）从 `Pending` 开始。依赖未过线时不得进入 `Implementing`（即使 Child 被直接启动）。
+- 循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。仅建议/信息可从 `Reviewing` 直达 `Verifying`。验证失败回到 `Implementing`。
 
 ## 编排规则（DP-26 最小集）
 
 - Ticket 按依赖拓扑执行：无依赖的 Ticket 可并行启动；依赖未过线的 Ticket 不得提前开工。
 - 单张 Child 失败不自动取消同 Story 其他未受影响的 Ticket。
-- 失败处理方式：对该 Ticket 重试、人工将其从必做清单中移除（`drop_ticket`），或对 Story `abort`。
+- 失败处理方式：对该 Ticket 重试、人工将其从清单中移除（`drop_ticket`），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`。
 - 幂等键：`ticket_id + execution_id`（同时用作 Child workflow id）。
 - `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。
 
@@ -31,13 +74,13 @@
 | Implementing | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此等待 Child |
 | Reviewing | 双 Agent 并行输出阻断/建议/信息，并引用规则条文；无新证据即停 |
 | HumanGate | 人工 Signal：放行 / 打回 / 否决 |
-| Verifying | 至少一行「红线 ↔ 证据」，命令或现象可复现。全部必做过线后进入 TestDeploying |
-| TestDeploying | 测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
+| Verifying | 至少一行「红线 ↔ 证据」，命令或现象可复现。全部未移除 Ticket 过线且已授权后，由父执行从聚合 Implementing 进入 TestDeploying |
+| TestDeploying | 已收到 authorize_test_deploy；测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
 | Retro | 写入 `docs/knowledge/daily/YYYY-MM-DD.md`，更新 candidates；全局草案待签批。当前为桩，不写文件 |
 
 ## 人工 Signal
 
-`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`promote_rule`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。
+`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。
 
 进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态。完整心跳尚未实现。
 

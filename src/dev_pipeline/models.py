@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 
 ReviewDecision = Literal["approve", "rework", "reject"]
@@ -13,11 +14,14 @@ PublishTarget = Literal["test"]
 
 @dataclass
 class TicketSpec:
-    """One implementation ticket on a Story, including dependency edges."""
+    """One implementation ticket on a Story, including dependency edges.
+
+    Every ticket in the start payload is required. The only in-scope way to
+    take a ticket off the list after start is ``drop_ticket``.
+    """
 
     ticket_id: str
     depends_on: list[str] = field(default_factory=list)
-    required: bool = True
 
 
 @dataclass
@@ -103,6 +107,7 @@ class ReviewFindings:
     paradigm_drift: bool = False
 
     def requires_human_gate(self) -> bool:
+        """Return True when review findings require a human gate."""
         return bool(self.blocking) or self.paradigm_drift
 
 
@@ -120,7 +125,7 @@ class PublishRequest:
 
     story_id: str
     execution_id: str
-    target: str = "test"
+    target: PublishTarget = TEST_PUBLISH_TARGET
 
 
 @dataclass
@@ -180,7 +185,6 @@ class TicketSnapshot:
 
     ticket_id: str
     stage: TicketStage
-    required: bool
     depends_on: list[str] = field(default_factory=list)
     started: bool = False
     unhandled_failure: bool = False

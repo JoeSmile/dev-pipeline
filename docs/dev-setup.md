@@ -73,6 +73,8 @@ python -m dev_pipeline.worker --config-root D:\pipeline-config
 
 若省略 `--config-root`、路径不存在、不是绝对路径，或指向一个文件而不是目录，进程会以中文错误退出，而不会继续执行。
 
+Worker 启动成功与配置根目录错误都会通过 structlog 记录，不再使用 `print`。CLI 参数没有变化：`--config-root` 仍是必填且必须已经存在的绝对目录。
+
 非 Windows 环境可以使用 `scripts/start-worker.sh --config-root /absolute/path`，约定与上面相同。
 
 ## 6. 本骨架尚未包含的内容

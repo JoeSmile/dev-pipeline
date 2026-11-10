@@ -12,20 +12,12 @@ from dev_pipeline.stages import TicketStage
 
 
 def index_specs(specs: Sequence[TicketSpec]) -> dict[str, TicketSpec]:
+    """Index ticket specs by id, rejecting a duplicate ticket_id."""
+
     indexed = {spec.ticket_id: spec for spec in specs}
     if len(indexed) != len(specs):
         raise ValueError("Ticket 清单中存在重复的 ticket_id")
     return indexed
-
-
-def unknown_dependencies(specs: Sequence[TicketSpec]) -> dict[str, tuple[str, ...]]:
-    known = {spec.ticket_id for spec in specs}
-    missing: dict[str, tuple[str, ...]] = {}
-    for spec in specs:
-        absent = tuple(dep for dep in spec.depends_on if dep not in known)
-        if absent:
-            missing[spec.ticket_id] = absent
-    return missing
 
 
 def is_eligible_to_start(
@@ -50,12 +42,13 @@ def eligible_ticket_ids(
 ) -> tuple[str, ...]:
     """Return tickets that may be started now, in stable spec order."""
 
+    index_specs(specs)
     by_id = {item.ticket_id: item for item in snapshots}
     stages = {item.ticket_id: item.stage for item in snapshots}
     eligible: list[str] = []
     for spec in specs:
         snap = by_id.get(spec.ticket_id)
-        if snap is not None and (not snap.required or snap.stage is TicketStage.DROPPED):
+        if snap is not None and snap.stage is TicketStage.DROPPED:
             continue
         already_started = bool(snap.started) if snap is not None else False
         if snap is not None and snap.stage is not TicketStage.PENDING:

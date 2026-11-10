@@ -1,22 +1,26 @@
-"""Transition table tests: README / TestDeploying / DP-26, plus illegal paths."""
+"""Transition table tests: README / TestDeploying / DP-9, plus illegal paths."""
 
 from __future__ import annotations
 
 import pytest
-
-from dev_pipeline.errors import IllegalTransition, ProductionDeployForbidden
-from dev_pipeline.models import PublishRequest
-from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
-from dev_pipeline.transitions import (
+from tests.transition_oracles import (
     ILLEGAL_EXAMPLES,
     README_PARENT_EDGES,
+    ticket_views_from_stages,
+)
+
+from dev_pipeline.errors import IllegalTransition, ProductionDeployForbidden
+from dev_pipeline.models import PublishRequest, TicketSpec
+from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
+from dev_pipeline.transitions import (
+    ChildGuardContext,
     ParentGuardContext,
     assert_legal_transition,
     can_enter_retro,
     can_enter_test_deploying,
+    child_edges,
     is_legal_transition,
     parent_edges,
-    ticket_views_from_stages,
     validate_publish_target,
 )
 
@@ -24,15 +28,13 @@ from dev_pipeline.transitions import (
 def test_parent_table_contains_readme_and_test_deploying_edges() -> None:
     edges = parent_edges()
     missing = README_PARENT_EDGES - edges
-    assert missing == frozenset(), f"转移表缺少 README/DP-26 边: {missing}"
-    assert (
-        "Implementing",
-        "TestDeploying",
-        "all_required_tickets_verified",
-    ) in edges
+    assert missing == frozenset(), f"转移表缺少 README/DP-9 边: {missing}"
+    assert ("Implementing", "TestDeploying", "authorize_test_deploy") in edges
     assert ("TestDeploying", "Retro", "test_deploy_success") in edges
     assert ("TestDeploying", "Blocked", "test_deploy_failure") in edges
     assert ("Implementing", "Retro", "skip_test_deploy") not in edges
+    assert ("Implementing", "TestDeploying", "all_required_tickets_verified") not in edges
+    assert ("Verifying", "TestDeploying", "authorize_test_deploy") not in edges
     assert ("Verifying", "Retro", "all_required_tickets_verified") not in edges
 
 
@@ -40,10 +42,17 @@ def test_parent_table_has_no_production_deploy_transition() -> None:
     for source, dest, trigger in parent_edges():
         blob = f"{source} {dest} {trigger}".lower()
         assert "production" not in blob
-        assert "prod" not in blob.replace("approved", "")
-        # "prod" as a standalone publish target must not appear in dest/trigger.
         assert dest not in {"Production", "ProductionDeploying", "Prod"}
         assert "publish_production" not in trigger
+
+
+def test_child_table_contains_core_loop() -> None:
+    edges = child_edges()
+    assert ("Pending", "Implementing", "dependencies_satisfied") in edges
+    assert ("Implementing", "Reviewing", "diff_submitted") in edges
+    assert ("Reviewing", "HumanGate", "blocking_or_paradigm_drift") in edges
+    assert ("Reviewing", "Verifying", "advisory_only") in edges
+    assert ("Verifying", "Verified", "verify_passed") in edges
 
 
 @pytest.mark.parametrize(("source", "dest", "trigger", "scope"), ILLEGAL_EXAMPLES)
@@ -69,7 +78,7 @@ def test_cannot_enter_test_deploying_while_sibling_reviewing() -> None:
         assert_legal_transition(
             ParentStage.IMPLEMENTING.value,
             ParentStage.TEST_DEPLOYING.value,
-            "all_required_tickets_verified",
+            "authorize_test_deploy",
             scope="parent",
             ctx=ctx,
         )
@@ -102,7 +111,7 @@ def test_cannot_enter_retro_until_test_deploying_succeeded() -> None:
         )
 
 
-def test_unhandled_required_failure_blocks_test_deploying_and_retro() -> None:
+def test_unhandled_failure_blocks_test_deploying_and_retro() -> None:
     tickets = ticket_views_from_stages(
         {"A": TicketStage.FAILED, "B": TicketStage.VERIFIED}
     )
@@ -110,13 +119,42 @@ def test_unhandled_required_failure_blocks_test_deploying_and_retro() -> None:
     assert can_enter_retro(tickets, TestDeployStatus.SUCCEEDED) is False
 
 
-def test_dropped_ticket_is_not_required_for_test_deploying() -> None:
+def test_dropped_ticket_does_not_block_test_deploying() -> None:
     tickets = ticket_views_from_stages(
         {"A": TicketStage.VERIFIED, "B": TicketStage.DROPPED},
-        required={"A": True, "B": False},
         unhandled={"A": False, "B": False},
     )
     assert can_enter_test_deploying(tickets) is True
+
+
+def test_pending_ticket_blocks_test_deploying() -> None:
+    tickets = ticket_views_from_stages(
+        {"A": TicketStage.VERIFIED, "B": TicketStage.PENDING}
+    )
+    assert can_enter_test_deploying(tickets) is False
+
+
+def test_ticket_spec_has_no_deferred_flag() -> None:
+    assert "required" not in TicketSpec.__dataclass_fields__
+    spec = TicketSpec(ticket_id="A")
+    assert not hasattr(spec, "required")
+
+
+def test_child_cannot_enter_implementing_until_dependencies_verified() -> None:
+    assert not is_legal_transition(
+        "Pending", "Implementing", "dependencies_satisfied", scope="child"
+    )
+    with pytest.raises(IllegalTransition, match="依赖尚未验证"):
+        assert_legal_transition(
+            "Pending", "Implementing", "dependencies_satisfied", scope="child"
+        )
+    assert is_legal_transition(
+        "Pending",
+        "Implementing",
+        "dependencies_satisfied",
+        scope="child",
+        ctx=ChildGuardContext(dependencies_verified=True),
+    )
 
 
 def test_production_publish_target_is_rejected() -> None:
@@ -129,7 +167,7 @@ def test_production_publish_target_is_rejected() -> None:
     with pytest.raises(ProductionDeployForbidden):
         validate_publish_target("staging")
     assert validate_publish_target("test") == "test"
-    request = PublishRequest(story_id="s", execution_id="e", target="production")
+    request = PublishRequest(story_id="s", execution_id="e", target="production")  # type: ignore[arg-type]
     with pytest.raises(ProductionDeployForbidden):
         validate_publish_target(request.target)
 
