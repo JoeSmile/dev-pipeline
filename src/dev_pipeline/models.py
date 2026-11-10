@@ -226,6 +226,21 @@ class ReopenStartResult:
 
 
 @dataclass
+class WorkspaceClaim:
+    """Recorded workspace / branch / PR-like identity for one ticket execution.
+
+    This is a side-effect claim, not a real git worktree or GitHub PR.
+    Identifiers are derived from ``ticket_id + execution_id``.
+    """
+
+    ticket_id: str
+    execution_id: str
+    workspace_id: str
+    branch_name: str
+    pr_token: str
+
+
+@dataclass
 class TicketStateUpdate:
     """Child-to-parent progress signal for the queryable snapshot."""
 

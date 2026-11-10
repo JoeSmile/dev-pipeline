@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from temporalio import workflow
-from temporalio.workflow import ChildWorkflowHandle
 
-from dev_pipeline.models import PipelineResult, PipelineSnapshot, StoryInput, TicketResult
+from dev_pipeline.models import PipelineResult, PipelineSnapshot, StoryInput
 from dev_pipeline.stages import ParentStage
+from dev_pipeline.workflows.child_start import TicketChildHandle
 from dev_pipeline.workflows.parent_child_signals import ParentChildSignalMixin
 from dev_pipeline.workflows.parent_orchestrate import ParentOrchestrationMixin
 from dev_pipeline.workflows.parent_reopen import ParentReopenMixin
@@ -24,7 +22,7 @@ class DevPipelineWorkflow(
 
     def __init__(self) -> None:
         self._state = ParentState()
-        self._children: dict[str, ChildWorkflowHandle[Any, TicketResult]] = {}
+        self._children: dict[str, TicketChildHandle] = {}
 
     @workflow.run
     async def run(self, payload: StoryInput) -> PipelineResult:

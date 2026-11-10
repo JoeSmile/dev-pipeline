@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from temporalio import workflow
-from temporalio.workflow import ChildWorkflowHandle
 
-from dev_pipeline.models import TicketResult, TicketStateUpdate, ticket_workflow_id
+from dev_pipeline.models import TicketStateUpdate, ticket_workflow_id
 from dev_pipeline.stages import TicketStage
+from dev_pipeline.workflows.child_start import TicketChildHandle
 from dev_pipeline.workflows.parent_state import ParentState
 
 
@@ -16,7 +16,7 @@ class ParentChildSignalMixin:
     """Signals that update ticket snapshots or are forwarded to a child."""
 
     _state: ParentState
-    _children: dict[str, ChildWorkflowHandle[Any, TicketResult]]
+    _children: dict[str, TicketChildHandle]
 
     @workflow.signal
     async def retry_ticket(self, ticket_id: str) -> None:
@@ -64,7 +64,7 @@ class ParentChildSignalMixin:
                 return
             child_id = ticket_workflow_id(ticket_id, self._state.input.execution_id)
             handle = cast(
-                ChildWorkflowHandle[Any, TicketResult],
+                TicketChildHandle,
                 workflow.get_external_workflow_handle(child_id),
             )
         if payload is None:

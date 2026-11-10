@@ -59,7 +59,11 @@ stateDiagram-v2
 - Ticket 按依赖拓扑执行：无依赖的 Ticket 可并行启动；依赖未过线的 Ticket 不得提前开工。
 - 单张 Child 失败不自动取消同 Story 其他未受影响的 Ticket。
 - 失败处理方式：对该 Ticket 重试、人工将其从清单中移除（`drop_ticket`），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`。
-- 幂等键：`ticket_id + execution_id`（同时用作 Child workflow id）。
+- 幂等键：`ticket_id+execution_id`（`ticket_workflow_id`，同时用作 Child workflow id）。Child 启动使用 `REJECT_DUPLICATE`，第二次启动会附着到已有 execution，而不是再开一个 Child。
+  - 同键、仍在进行中：视为重入，不创建第二份副作用（工作区 / 分支 / PR 声明）。
+  - 同键、已完成：返回已有结果，不开新分支 / PR / worktree。
+  - 不同 `execution_id`（含 `reopen`）：新键、新工作区声明；不得继跑或 signal 旧 Child。
+- `retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`，也不再声明一份工作区。
 - `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。只在 `Blocked` 或 `Done` 时接受；由 Activity `start_reopened_workflow` 用 Temporal Client 启动独立新执行（不用 Continue-As-New，也不作为会随父关闭而结束的 Child）。
 
 ## 契约摘要

@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Any
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, TemporalError
-from temporalio.workflow import (
-    ChildWorkflowCancellationType,
-    ChildWorkflowHandle,
-    ParentClosePolicy,
-)
+from temporalio.workflow import ChildWorkflowCancellationType, ParentClosePolicy
 
 from dev_pipeline.constants import TEST_PUBLISH_TARGET, WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.models import (
@@ -25,12 +20,18 @@ from dev_pipeline.models import (
     SpikeResult,
     StoryInput,
     TicketInput,
-    TicketResult,
-    ticket_workflow_id,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus
 from dev_pipeline.topology import eligible_ticket_ids
 from dev_pipeline.transitions import can_enter_test_deploying, unhandled_failures
+from dev_pipeline.workflows.child_start import (
+    CHILD_EXECUTION_TIMEOUT,
+    CHILD_RETRY,
+    TicketChildHandle,
+    cancel_ticket_handle,
+    handle_is_done,
+    start_or_attach_ticket_child,
+)
 from dev_pipeline.workflows.parent_state import ParentState
 from dev_pipeline.workflows.ticket import TicketWorkflow
 
@@ -40,15 +41,13 @@ with workflow.unsafe.imports_passed_through():
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
-CHILD_EXECUTION_TIMEOUT = timedelta(hours=24)
-CHILD_RETRY = RetryPolicy(maximum_attempts=1)
 
 
 class ParentOrchestrationMixin:
     """Scope, spike, child start/stop, and test-deploy steps for the parent."""
 
     _state: ParentState
-    _children: dict[str, ChildWorkflowHandle[Any, TicketResult]]
+    _children: dict[str, TicketChildHandle]
     _finish_terminal: Callable[[PipelineResult], Awaitable[PipelineResult]]
 
     def _move(self, dest: ParentStage, trigger: str) -> None:
@@ -144,11 +143,13 @@ class ParentOrchestrationMixin:
         return started
 
     async def _start_child(self, ticket_id: str) -> None:
+        existing = self._children.get(ticket_id)
+        if existing is not None:
+            return
         payload = self._state.input
         assert payload is not None
         spec = next(item for item in self._state.specs if item.ticket_id == ticket_id)
-        handle = await workflow.start_child_workflow(
-            TicketWorkflow.run,
+        handle, started = await start_or_attach_ticket_child(
             TicketInput(
                 ticket_id=ticket_id,
                 execution_id=payload.execution_id,
@@ -157,7 +158,6 @@ class ParentOrchestrationMixin:
                 parent_workflow_id=workflow.info().workflow_id,
                 depends_on=list(spec.depends_on),
             ),
-            id=ticket_workflow_id(ticket_id, payload.execution_id),
             parent_close_policy=ParentClosePolicy.TERMINATE,
             cancellation_type=ChildWorkflowCancellationType.TRY_CANCEL,
             execution_timeout=CHILD_EXECUTION_TIMEOUT,
@@ -165,7 +165,8 @@ class ParentOrchestrationMixin:
         )
         self._children[ticket_id] = handle
         self._state.tickets[ticket_id].started = True
-        await handle.signal(TicketWorkflow.dependencies_satisfied)
+        if started:
+            await handle.signal(TicketWorkflow.dependencies_satisfied)
 
     async def _run_test_deploy_and_retro(self) -> PipelineResult:
         state = self._state
@@ -218,10 +219,13 @@ class ParentOrchestrationMixin:
     async def _stop_children(self) -> None:
         """Signal abort and cancel every running child before the parent blocks."""
         for handle in list(self._children.values()):
-            if handle.done():
+            if handle_is_done(handle):
                 continue
             try:
                 await handle.signal(TicketWorkflow.abort)
             except TemporalError:
                 pass
-            handle.cancel()
+            try:
+                await cancel_ticket_handle(handle)
+            except TemporalError:
+                pass

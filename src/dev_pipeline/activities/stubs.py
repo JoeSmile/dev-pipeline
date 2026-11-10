@@ -19,6 +19,7 @@ from dev_pipeline.models import (
     VerifyResult,
 )
 from dev_pipeline.transitions import validate_publish_target
+from dev_pipeline.workspace import claim_workspace
 
 
 @activity.defn
@@ -31,9 +32,18 @@ async def run_spike(payload: SpikeInput) -> SpikeResult:
 
 @activity.defn
 async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
-    """Default coding stub. Real Coding workers are later tickets."""
+    """Default coding stub. Real Coding workers are later tickets.
 
-    activity.logger.info("stub implement_ticket ticket=%s", payload.ticket_id)
+    The stub claims a workspace identity for this ticket execution so a
+    rerun with the same key cannot record a second branch or PR token.
+    """
+
+    claim = claim_workspace(payload)
+    activity.logger.info(
+        "stub implement_ticket ticket=%s workspace=%s",
+        payload.ticket_id,
+        claim.workspace_id,
+    )
     return ImplementResult(diff_submitted=True, detail="stub-implement")
 
 

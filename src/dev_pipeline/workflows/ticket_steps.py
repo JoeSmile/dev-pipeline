@@ -21,10 +21,17 @@ from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
 
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.stubs import implement_ticket, review_ticket, verify_ticket
+    from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
+CLAIM_TIMEOUT = timedelta(seconds=10)
 HEARTBEAT_TIMEOUT = timedelta(seconds=2)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
+CLAIM_RETRY = RetryPolicy(
+    maximum_attempts=3,
+    initial_interval=timedelta(seconds=1),
+    maximum_interval=timedelta(seconds=5),
+)
 
 
 class TicketRuntime:
@@ -127,10 +134,17 @@ async def finish_stopped(runtime: TicketRuntime) -> TicketResult:
 
 
 async def run_implement(runtime: TicketRuntime) -> None:
-    """Run the implement stub and advance to Reviewing, or fail the ticket."""
+    """Claim the ticket workspace, then run the implement stub."""
+    work = runtime.work_input()
+    await workflow.execute_activity(
+        claim_ticket_workspace,
+        work,
+        start_to_close_timeout=CLAIM_TIMEOUT,
+        retry_policy=CLAIM_RETRY,
+    )
     result = await workflow.execute_activity(
         implement_ticket,
-        runtime.work_input(),
+        work,
         start_to_close_timeout=ACTIVITY_TIMEOUT,
         heartbeat_timeout=HEARTBEAT_TIMEOUT,
         retry_policy=NO_RETRY,

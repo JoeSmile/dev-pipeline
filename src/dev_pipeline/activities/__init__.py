@@ -10,10 +10,12 @@ from dev_pipeline.activities.stubs import (
     verify_ticket,
     write_retro_record,
 )
+from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 STUB_ACTIVITIES = (
     validate_config_root,
     run_spike,
+    claim_ticket_workspace,
     implement_ticket,
     review_ticket,
     verify_ticket,
@@ -24,6 +26,7 @@ STUB_ACTIVITIES = (
 __all__ = [
     "STUB_ACTIVITIES",
     "ReopenStarter",
+    "claim_ticket_workspace",
     "implement_ticket",
     "publish_to_test_env",
     "review_ticket",

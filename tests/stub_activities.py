@@ -19,8 +19,10 @@ from dev_pipeline.models import (
     SpikeResult,
     TicketWorkInput,
     VerifyResult,
+    WorkspaceClaim,
 )
 from dev_pipeline.transitions import validate_publish_target
+from dev_pipeline.workspace import WorkspaceClaimStore, claim_workspace
 
 
 async def _await_gate(event: asyncio.Event) -> None:
@@ -52,6 +54,7 @@ class StubController:
     reviewed: list[str] = field(default_factory=list)
     publish_calls: int = 0
     implement_fail_remaining: dict[str, int] = field(default_factory=dict)
+    workspace: WorkspaceClaimStore = field(default_factory=WorkspaceClaimStore)
 
     def gate(self, kind: str, ticket_id: str) -> asyncio.Event:
         store = {
@@ -89,8 +92,13 @@ class StubController:
         async def run_spike(payload: SpikeInput) -> SpikeResult:
             return SpikeResult(red_line_failed=controller.spike_red_line, detail="test-spike")
 
+        @activity.defn(name="claim_ticket_workspace")
+        async def claim_ticket_workspace(payload: TicketWorkInput) -> WorkspaceClaim:
+            return claim_workspace(payload, store=controller.workspace)
+
         @activity.defn(name="implement_ticket")
         async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
+            claim_workspace(payload, store=controller.workspace)
             controller.started.append(payload.ticket_id)
             remaining = controller.implement_fail_remaining.get(payload.ticket_id, 0)
             if remaining > 0:
@@ -132,6 +140,7 @@ class StubController:
         return (
             validate_config_root,
             run_spike,
+            claim_ticket_workspace,
             implement_ticket,
             review_ticket,
             verify_ticket,
