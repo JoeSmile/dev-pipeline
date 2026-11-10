@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import structlog
 
-from dev_pipeline.activities import STUB_ACTIVITIES
+from dev_pipeline.activities import STUB_ACTIVITIES, ReopenStarter
 from dev_pipeline.config_root import validate_config_root_path
 from dev_pipeline.constants import (
     CLIENT_CONNECT_TIMEOUT,
@@ -95,11 +95,12 @@ async def run_worker(args: WorkerArgs) -> None:
         args.temporal_target,
         connect_timeout=CLIENT_CONNECT_TIMEOUT,
     )
+    starter = ReopenStarter(client)
     worker = Worker(
         client,
         task_queue=args.task_queue,
         workflows=list(WORKFLOWS),
-        activities=list(STUB_ACTIVITIES),
+        activities=[*STUB_ACTIVITIES, starter.start_reopened_workflow],
     )
     logger.info(
         "dev-pipeline worker 已连接",

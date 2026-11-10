@@ -17,13 +17,17 @@ from tests.workflow_helpers import (
     started,
     story,
     wait_snapshot,
+    wait_terminal,
     wait_until,
 )
 
 from dev_pipeline.activities.stubs import publish_to_test_env
 from dev_pipeline.errors import ProductionDeployForbidden
 from dev_pipeline.models import (
+    AbortRequest,
+    ApproveSpikeRequest,
     PublishRequest,
+    ReopenRequest,
     ReviewFindings,
     ReviewOverride,
     SchemeDecision,
@@ -47,7 +51,7 @@ async def test_happy_path_reaches_done_via_test_deploying(
     try:
         await advance_to_implementing(handle, payload)
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
         assert result.test_deploy_status is TestDeployStatus.SUCCEEDED
         assert result.test_deploy_address
@@ -80,7 +84,7 @@ async def test_sibling_in_reviewing_blocks_parent_test_deploy_and_retro(
         assert snap.waiting_signal != "正在等候你确认测试环境发布"
         controller.release("review", "B")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
     finally:
         await worker.__aexit__(None, None, None)
@@ -96,7 +100,7 @@ async def test_parent_cannot_enter_retro_when_test_deploy_fails(
     try:
         await advance_to_implementing(handle, payload)
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED
         assert result.test_deploy_status is TestDeployStatus.FAILED
         assert result.blocked_reason is not None
@@ -125,7 +129,7 @@ async def test_independent_tickets_start_in_parallel(
         await wait_until(lambda: set(controller.started) >= {"A", "B"})
         controller.release("implement", "A", "B")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
     finally:
         await worker.__aexit__(None, None, None)
@@ -157,7 +161,7 @@ async def test_dependent_ticket_does_not_start_early(
         assert started(snap, "B")
         controller.release("implement", "B")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
     finally:
         await worker.__aexit__(None, None, None)
@@ -196,7 +200,7 @@ async def test_one_child_failure_does_not_cancel_sibling_and_blocks_retro(
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
         await handle.signal(DevPipelineWorkflow.drop_ticket, "A")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
         assert result.test_deploy_status is TestDeployStatus.SUCCEEDED
     finally:
@@ -267,7 +271,7 @@ async def test_blocking_review_waits_for_human_gate(
             ReviewOverride(ticket_id="A", decision="approve"),
         )
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
     finally:
         await worker.__aexit__(None, None, None)
@@ -280,12 +284,16 @@ async def test_abort_from_intake_blocks_and_reopen_is_rejected(
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
-        await handle.signal(DevPipelineWorkflow.reopen, "exec-new")
-        snap = await wait_snapshot(handle, lambda item: item.last_illegal is not None)
-        assert snap.last_illegal is not None
-        assert "新的 execution_id" in snap.last_illegal
-        await handle.signal(DevPipelineWorkflow.abort, "stop")
-        result = await handle.result()
+        await handle.signal(DevPipelineWorkflow.reopen, ReopenRequest(execution_id="exec-new"))
+        snap = await wait_snapshot(
+            handle,
+            lambda item: item.last_rejection is not None and item.last_rejection.signal == "reopen",
+        )
+        assert snap.stage is ParentStage.INTAKE
+        assert snap.last_rejection is not None
+        assert "请先 abort" in snap.last_rejection.reason
+        await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="stop"))
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED
         assert result.blocked_reason is not None
     finally:
@@ -300,13 +308,14 @@ async def test_spike_reject_blocks(
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
         await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in"))
+        await wait_snapshot(handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED)
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,
             SchemeDecision(has_high_risk_assumption=True, tickets=list(payload.tickets)),
         )
         await wait_snapshot(handle, lambda item: item.stage is ParentStage.SPIKE)
-        await handle.signal(DevPipelineWorkflow.approve_spike, False)
-        result = await handle.result()
+        await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=False))
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED
     finally:
         await worker.__aexit__(None, None, None)

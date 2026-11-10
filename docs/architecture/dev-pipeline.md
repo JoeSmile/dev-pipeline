@@ -60,7 +60,7 @@ stateDiagram-v2
 - 单张 Child 失败不自动取消同 Story 其他未受影响的 Ticket。
 - 失败处理方式：对该 Ticket 重试、人工将其从清单中移除（`drop_ticket`），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`。
 - 幂等键：`ticket_id + execution_id`（同时用作 Child workflow id）。
-- `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。
+- `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。只在 `Blocked` 或 `Done` 时接受；由 Activity `start_reopened_workflow` 用 Temporal Client 启动独立新执行（不用 Continue-As-New，也不作为会随父关闭而结束的 Child）。
 
 ## 契约摘要
 
@@ -80,7 +80,7 @@ stateDiagram-v2
 
 ## 人工 Signal
 
-`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。
+`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
 进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态。完整心跳尚未实现。
 

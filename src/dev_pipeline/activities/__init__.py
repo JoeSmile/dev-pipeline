@@ -1,6 +1,7 @@
 """Activity entrypoints. Workflows import these through the Temporal sandbox escape hatch."""
 
 from dev_pipeline.activities.config import validate_config_root
+from dev_pipeline.activities.reopen import ReopenStarter
 from dev_pipeline.activities.stubs import (
     implement_ticket,
     publish_to_test_env,
@@ -22,6 +23,7 @@ STUB_ACTIVITIES = (
 
 __all__ = [
     "STUB_ACTIVITIES",
+    "ReopenStarter",
     "implement_ticket",
     "publish_to_test_env",
     "review_ticket",

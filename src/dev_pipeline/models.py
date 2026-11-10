@@ -170,6 +170,62 @@ class PromoteRuleRequest:
 
 
 @dataclass
+class ApproveSpikeRequest:
+    """Payload for the approve_spike human signal."""
+
+    accepted: bool
+
+
+@dataclass
+class AbortRequest:
+    """Payload for the abort human signal."""
+
+    reason: str
+
+
+@dataclass
+class ReopenRequest:
+    """Payload for the reopen human signal. Must carry a new execution_id."""
+
+    execution_id: str
+
+
+@dataclass
+class AuthorizeTestDeployRequest:
+    """Payload for authorize_test_deploy. This signal has no required fields."""
+
+
+@dataclass
+class SignalRejection:
+    """Queryable record of a rejected human signal. The current stage is unchanged."""
+
+    signal: str
+    reason: str
+
+
+@dataclass
+class ReopenStartInput:
+    """Safe start payload for a new parent execution. Contains no secrets."""
+
+    story_id: str
+    execution_id: str
+    config_root: str
+    task_queue: str
+    tickets: list[TicketSpec] = field(default_factory=list)
+    summary: str = ""
+
+
+@dataclass
+class ReopenStartResult:
+    """Outcome of starting a reopened parent execution."""
+
+    started: bool
+    workflow_id: str
+    execution_id: str
+    error: str | None = None
+
+
+@dataclass
 class TicketStateUpdate:
     """Child-to-parent progress signal for the queryable snapshot."""
 
@@ -203,8 +259,11 @@ class PipelineSnapshot:
     test_deploy_status: TestDeployStatus = TestDeployStatus.NOT_STARTED
     blocked_reason: str | None = None
     last_illegal: str | None = None
+    last_rejection: SignalRejection | None = None
     promote_rule_status: str | None = None
     test_deploy_address: str | None = None
+    reopened_execution_id: str | None = None
+    reopen_status: str | None = None
 
 
 @dataclass

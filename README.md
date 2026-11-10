@@ -8,7 +8,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 ## 当前阶段
 
-[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架进行中：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）已按测试落地。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
+[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架与 [DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen 进行中：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）已按测试落地。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
 
 真实 Coding / Review LLM Worker、Cursor CLI 运行时和 `agent-platform` 对接尚未实现。不要把本仓库当成整条流水线已经完成。
 
@@ -110,7 +110,22 @@ stateDiagram-v2
 - `retry_ticket` / `drop_ticket`：重试失败 Ticket，或把它从清单中移除
 - `abort` / `reopen`：中止或重开同一 Ticket / Story（必须开新 execution，不复用已乱掉的一次）
 
-`abort` 会取消仍在运行的 Child，把父执行带入 `Blocked`，并留下可回放记录。本骨架尚未回收 worktree / 处理远程 PR（后续票）。`reopen` 在同一次执行上会被拒绝。
+`abort` 会取消仍在运行的 Child，把父执行带入 `Blocked`，并留下可回放记录。本骨架尚未回收 worktree / 处理远程 PR（见 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30)）。`reopen` 只在 `Blocked` 或 `Done` 时接受，且必须带一个不同于当前的新 `execution_id`；接受后由 Activity 启动一条独立的新父执行，旧执行保持终态、不会被继跑。仍在运行时 reopen 会被拒绝（须先 `abort`）。错误阶段或非法 payload 的 Signal 一律拒绝，记入可查询的 `last_rejection`，不改变当前阶段。
+
+### Signal payload schema
+
+字段与拒绝条件以代码为准：`src/dev_pipeline/signal_schemas.py`。
+
+| Signal | Payload | 必填 | 合法阶段 | 拒绝条件 |
+|---|---|---|---|---|
+| `lock_scope` | `ScopeLock` | `in_scope` | Intake | 缺字段、类型错误、范围已锁、阶段不对 |
+| `decide_scheme` | `SchemeDecision` | `has_high_risk_assumption` | ScopeLocked | 缺字段、类型错误、已拍过、阶段不对 |
+| `approve_spike` | `ApproveSpikeRequest` | `accepted` | Spike | 缺字段、类型错误、已决定、阶段不对 |
+| `review_override` | `ReviewOverride` | `ticket_id`、`decision`（`approve` / `rework` / `reject`） | 对应 Child 处于 HumanGate | 缺字段、类型错误、未知 Ticket、不在 HumanGate |
+| `authorize_test_deploy` | `AuthorizeTestDeployRequest`（无必填字段） | （无） | Implementing，且全部未移除 Ticket 已过线 | 阶段不对，或尚有 Ticket 未过线 / 失败未处理 |
+| `promote_rule` | `PromoteRuleRequest` | `rule_name` | 运行中任意阶段 | schema 错误记入 `last_rejection`；`automatic=true` 时 Signal 已接收，但晋升动作被拒绝并记录 |
+| `abort` | `AbortRequest` | `reason` | 非 Done / Blocked | 缺字段、类型错误、已经结束 |
+| `reopen` | `ReopenRequest` | `execution_id`（非空且不同于当前） | Blocked 或 Done | 执行未结束（须先 abort）、id 非法、目标 workflow 已存在 |
 
 ## 硬约束（L0，2026-11-10 冻结）
 
@@ -139,10 +154,15 @@ stateDiagram-v2
 
 远程仓库：[JoeSmile/dev-pipeline](https://github.com/JoeSmile/dev-pipeline)。L0 已冻结。Windows 是首选本地开发环境。配置根目录是必填的绝对路径，必须已经存在；缺失或无效时会立刻失败，不会回退到当前目录，也不会把它当成“可能已有”而继续。步骤见 `docs/dev-setup.md`。
 
-本地 Temporal 默认地址为 `localhost:7233`。单元测试与 Workflow 测试使用 `temporalio.testing.WorkflowEnvironment`，不需要已启动的 Temporal 服务。
+本地 Temporal 默认地址为 `localhost:7233`。单元测试与 Workflow 测试使用 `temporalio.testing.WorkflowEnvironment`，不需要已启动的 Temporal 服务。也可以在 Docker 中跑同一套检查，步骤见 `docs/dev-setup.md`。
 
 ```powershell
 python -m pytest
 ruff check src tests
 mypy
+```
+
+```powershell
+.\scripts\test-docker.ps1
+.\scripts\test-docker.ps1 -WithTemporal
 ```

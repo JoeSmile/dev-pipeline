@@ -34,6 +34,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "temporal_server: requires a reachable Temporal server (TEMPORAL_TARGET)",
+]
 
 [tool.ruff]
 target-version = "py312"

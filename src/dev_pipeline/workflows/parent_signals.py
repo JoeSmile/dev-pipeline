@@ -1,178 +1,185 @@
-"""Human and child-routed signals mixed into DevPipelineWorkflow."""
+"""Human signal handlers mixed into DevPipelineWorkflow."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from temporalio import workflow
-from temporalio.workflow import ChildWorkflowHandle
 
 from dev_pipeline.models import (
+    AbortRequest,
+    ApproveSpikeRequest,
     PromoteRuleRequest,
+    ReopenRequest,
     ReviewOverride,
     SchemeDecision,
     ScopeLock,
-    TicketResult,
-    TicketStateUpdate,
-    ticket_workflow_id,
 )
+from dev_pipeline.signal_schemas import parse_human_signal
 from dev_pipeline.stages import ParentStage, TicketStage
 from dev_pipeline.transitions import can_enter_test_deploying
 from dev_pipeline.workflows.parent_state import ParentState
 
-_REOPEN_MESSAGE = (
+_REOPEN_SAME_ID = (
     "reopen 必须使用新的 execution_id 启动新的父执行，不能在已损坏的本次执行上恢复。"
 )
+_REOPEN_NOT_TERMINAL = "当前执行尚未结束，不能 reopen。请先 abort。"
+_REOPEN_IN_FLIGHT = "正在处理 reopen，请等待新执行启动完成。"
 _PROMOTE_AUTO_REJECTED = "promote_rule 自动晋升已拒绝；全局规则不得静默升级。"
 _PROMOTE_RECORDED = "promote_rule 已记录，本骨架不执行晋升（拒绝自动生效）。"
 
 
 class ParentSignalMixin:
-    """Signal handlers for the parent workflow. Mixed into DevPipelineWorkflow."""
+    """Human signal handlers for the parent workflow. Mixed into DevPipelineWorkflow."""
 
     _state: ParentState
-    _children: dict[str, ChildWorkflowHandle[Any, TicketResult]]
 
     @workflow.signal
-    def lock_scope(self, payload: ScopeLock) -> None:
-        """Lock Story scope. Ignored if the parent has already left Intake."""
+    def lock_scope(self, payload: Any) -> None:
+        """Lock Story scope. Rejected unless the parent is still in Intake."""
+        parsed = self._parsed("lock_scope", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, ScopeLock)
         if self._state.scope is not None or self._state.stage is not ParentStage.INTAKE:
-            self._state.record_illegal(
+            self._reject(
+                "lock_scope",
                 f"非法转移: {self._state.stage.value} --lock_scope--> ScopeLocked。"
-                "当前阶段不能锁范围"
+                "当前阶段不能锁范围",
             )
             return
-        self._state.scope = payload
+        self._state.scope = parsed
 
     @workflow.signal
-    def decide_scheme(self, payload: SchemeDecision) -> None:
-        """Record the scheme decision. May also install the ticket list."""
-        if self._state.scheme is not None or self._state.stage not in {
-            ParentStage.INTAKE,
-            ParentStage.SCOPE_LOCKED,
-        }:
-            self._state.record_illegal(
+    def decide_scheme(self, payload: Any) -> None:
+        """Record the scheme decision after scope has been locked."""
+        parsed = self._parsed("decide_scheme", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, SchemeDecision)
+        if self._state.scheme is not None or self._state.stage is not ParentStage.SCOPE_LOCKED:
+            self._reject(
+                "decide_scheme",
                 f"非法转移: {self._state.stage.value} --decide_scheme--> SchemeDecided。"
-                "当前阶段不能拍方案"
+                "当前阶段不能拍方案",
             )
             return
-        self._state.scheme = payload
-        if payload.tickets:
-            self._state.install_tickets(payload.tickets)
+        self._state.scheme = parsed
+        if parsed.tickets:
+            self._state.install_tickets(parsed.tickets)
 
     @workflow.signal
-    def approve_spike(self, accepted: bool) -> None:
-        """Accept or reject a high-risk spike. Ignored outside the Spike path."""
-        if self._state.spike_accepted is not None or self._state.stage not in {
-            ParentStage.INTAKE,
-            ParentStage.SCOPE_LOCKED,
-            ParentStage.SCHEME_DECIDED,
-            ParentStage.SPIKE,
-        }:
-            self._state.record_illegal(
+    def approve_spike(self, payload: Any) -> None:
+        """Accept or reject a high-risk spike. Legal only while in Spike."""
+        parsed = self._parsed("approve_spike", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, ApproveSpikeRequest)
+        if self._state.spike_accepted is not None or self._state.stage is not ParentStage.SPIKE:
+            self._reject(
+                "approve_spike",
                 f"非法转移: {self._state.stage.value} --approve_spike--> TicketsReady。"
-                "当前不在 Spike"
+                "当前不在 Spike",
             )
             return
-        self._state.spike_accepted = accepted
+        self._state.spike_accepted = parsed.accepted
 
     @workflow.signal
-    def abort(self, reason: str = "abort") -> None:
+    def abort(self, payload: Any) -> None:
         """Request that this Story stop; running children are cancelled by run()."""
-        if self._state.stage is ParentStage.DONE:
-            self._state.record_illegal("已完成的执行不能 abort")
+        parsed = self._parsed("abort", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, AbortRequest)
+        if self._state.stage in {ParentStage.DONE, ParentStage.BLOCKED}:
+            self._reject("abort", "已结束的执行不能 abort")
             return
         self._state.abort_requested = True
-        self._state.abort_reason = reason or "abort"
+        self._state.abort_reason = parsed.reason
         self._state.ticket_event = True
 
     @workflow.signal
-    def reopen(self, new_execution_id: str = "") -> None:
-        """Reject resume of this execution. A new execution_id must be started."""
-        _ = new_execution_id
-        self._state.record_illegal(_REOPEN_MESSAGE)
+    def reopen(self, payload: Any) -> None:
+        """Accept reopen only at Blocked or Done, then ask run() to start a new execution."""
+        parsed = self._parsed("reopen", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, ReopenRequest)
+        current = self._state.input.execution_id if self._state.input is not None else ""
+        if parsed.execution_id == current:
+            self._reject("reopen", _REOPEN_SAME_ID)
+            return
+        if self._state.stage not in {ParentStage.BLOCKED, ParentStage.DONE}:
+            self._reject("reopen", _REOPEN_NOT_TERMINAL)
+            return
+        if self._state.reopen_started or self._state.reopen_request is not None:
+            self._reject("reopen", _REOPEN_IN_FLIGHT)
+            return
+        self._state.reopen_request = parsed
+        self._state.reopen_status = f"正在启动新执行 {parsed.execution_id}"
 
     @workflow.signal
-    def promote_rule(self, payload: PromoteRuleRequest) -> None:
-        """Record a promote_rule request. Automatic promotion is always rejected."""
-        if payload.automatic:
+    def promote_rule(self, payload: Any) -> None:
+        """Record a promote_rule request. Automatic promotion is always refused."""
+        parsed = self._parsed("promote_rule", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, PromoteRuleRequest)
+        if parsed.automatic:
             self._state.promote_status = _PROMOTE_AUTO_REJECTED
             self._state.record_illegal(_PROMOTE_AUTO_REJECTED)
             return
         self._state.promote_status = _PROMOTE_RECORDED
 
     @workflow.signal
-    def authorize_test_deploy(self) -> None:
+    def authorize_test_deploy(self, payload: Any = None) -> None:
         """Authorize test-environment publish after all non-dropped tickets verify."""
+        parsed = self._parsed("authorize_test_deploy", payload)
+        if parsed is None:
+            return
         if not can_enter_test_deploying(self._state.ticket_list()):
-            self._state.record_illegal(
-                "尚有 Ticket 未验证过线、仍在飞行阶段，或失败尚未处理，不能授权测试发布"
+            self._reject(
+                "authorize_test_deploy",
+                "尚有 Ticket 未验证过线、仍在飞行阶段，或失败尚未处理，不能授权测试发布",
             )
             return
         if self._state.stage is not ParentStage.IMPLEMENTING:
-            self._state.record_illegal(
+            self._reject(
+                "authorize_test_deploy",
                 f"非法转移: {self._state.stage.value} --authorize_test_deploy--> "
-                "TestDeploying。当前阶段不能授权测试发布"
+                "TestDeploying。当前阶段不能授权测试发布",
             )
             return
         self._state.test_deploy_authorized = True
         self._state.ticket_event = True
 
     @workflow.signal
-    async def review_override(self, payload: ReviewOverride) -> None:
-        """Route a human review decision to the named child ticket."""
-        await self._route_to_child(payload.ticket_id, "review_override", payload)
-
-    @workflow.signal
-    async def retry_ticket(self, ticket_id: str) -> None:
-        """Clear an unhandled failure and ask the child to retry from Implementing."""
-        snap = self._state.tickets.get(ticket_id)
-        if snap is not None:
-            snap.unhandled_failure = False
-            self._state.ticket_event = True
-        await self._route_to_child(ticket_id, "retry_ticket")
-
-    @workflow.signal
-    async def drop_ticket(self, ticket_id: str) -> None:
-        """Remove a ticket from the list so it no longer blocks TestDeploying or Retro."""
-        snap = self._state.tickets.get(ticket_id)
-        if snap is not None:
-            snap.unhandled_failure = False
-            snap.stage = TicketStage.DROPPED
-            self._state.ticket_event = True
-        await self._route_to_child(ticket_id, "drop_ticket")
-
-    @workflow.signal
-    def ticket_state_changed(self, update: TicketStateUpdate) -> None:
-        """Accept a progress update from a child TicketWorkflow."""
-        snap = self._state.tickets.get(update.ticket_id)
-        if snap is None:
+    async def review_override(self, payload: Any) -> None:
+        """Route a human review decision to a child that is waiting in HumanGate."""
+        parsed = self._parsed("review_override", payload)
+        if parsed is None:
             return
-        snap.stage = update.stage
-        snap.detail = update.detail
-        snap.started = True
-        if update.stage is TicketStage.DROPPED:
-            snap.unhandled_failure = False
-        else:
-            snap.unhandled_failure = update.unhandled_failure
-        self._state.ticket_event = True
-
-    async def _route_to_child(
-        self, ticket_id: str, signal_name: str, payload: object | None = None
-    ) -> None:
-        handle = self._children.get(ticket_id)
-        if handle is None:
-            if self._state.input is None:
-                return
-            snap = self._state.tickets.get(ticket_id)
-            if snap is None or not snap.started:
-                return
-            child_id = ticket_workflow_id(ticket_id, self._state.input.execution_id)
-            handle = cast(
-                ChildWorkflowHandle[Any, TicketResult],
-                workflow.get_external_workflow_handle(child_id),
+        assert isinstance(parsed, ReviewOverride)
+        snap = self._state.tickets.get(parsed.ticket_id)
+        if snap is None:
+            self._reject("review_override", f"未知 Ticket: {parsed.ticket_id}")
+            return
+        if snap.stage is not TicketStage.HUMAN_GATE:
+            self._reject(
+                "review_override",
+                f"Ticket {parsed.ticket_id} 不在 HumanGate，不能 review_override",
             )
-        if payload is None:
-            await handle.signal(signal_name)
-        else:
-            await handle.signal(signal_name, payload)
+            return
+        await self._route_to_child(  # type: ignore[attr-defined]
+            parsed.ticket_id, "review_override", parsed
+        )
+
+    def _parsed(self, signal: str, payload: object) -> object | None:
+        parsed, reason = parse_human_signal(signal, payload)
+        if reason is not None:
+            self._reject(signal, reason)
+            return None
+        return parsed
+
+    def _reject(self, signal: str, reason: str) -> None:
+        self._state.record_rejection(signal, reason)

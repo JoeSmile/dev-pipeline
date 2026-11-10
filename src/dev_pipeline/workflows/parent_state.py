@@ -5,8 +5,10 @@ from __future__ import annotations
 from dev_pipeline.models import (
     PipelineResult,
     PipelineSnapshot,
+    ReopenRequest,
     SchemeDecision,
     ScopeLock,
+    SignalRejection,
     StoryInput,
     TicketSnapshot,
     TicketSpec,
@@ -29,7 +31,12 @@ class ParentState:
         self.abort_reason = "abort"
         self.blocked_reason: str | None = None
         self.last_illegal: str | None = None
+        self.last_rejection: SignalRejection | None = None
         self.promote_status: str | None = None
+        self.reopen_request: ReopenRequest | None = None
+        self.reopen_started = False
+        self.reopened_execution_id: str | None = None
+        self.reopen_status: str | None = None
         self.test_deploy_status = TestDeployStatus.NOT_STARTED
         self.test_deploy_address: str | None = None
         self.test_deploy_authorized = False
@@ -92,6 +99,11 @@ class ParentState:
         """Record an operator-visible illegal request on the snapshot."""
         self.last_illegal = message
 
+    def record_rejection(self, signal: str, reason: str) -> None:
+        """Record an explicit signal rejection without changing the current stage."""
+        self.last_rejection = SignalRejection(signal=signal, reason=reason)
+        self.last_illegal = reason
+
     def finish_blocked(self, reason: str) -> PipelineResult:
         """Mark the parent Blocked and return the terminal result."""
         self.stage = ParentStage.BLOCKED
@@ -124,6 +136,9 @@ class ParentState:
             test_deploy_status=self.test_deploy_status,
             blocked_reason=self.blocked_reason,
             last_illegal=self.last_illegal,
+            last_rejection=self.last_rejection,
             promote_rule_status=self.promote_status,
             test_deploy_address=self.test_deploy_address,
+            reopened_execution_id=self.reopened_execution_id,
+            reopen_status=self.reopen_status,
         )

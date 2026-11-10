@@ -18,11 +18,13 @@ from tests.workflow_helpers import (
     started,
     story,
     wait_snapshot,
+    wait_terminal,
     wait_until,
 )
 
 from dev_pipeline.constants import DEFAULT_TASK_QUEUE, WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.models import (
+    AbortRequest,
     PromoteRuleRequest,
     TicketInput,
     TicketResult,
@@ -66,8 +68,8 @@ async def test_authorize_test_deploy_is_required_before_publish_or_retro(
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
         assert WAITING_AUTHORIZE_TEST_DEPLOY in (snap.waiting_signal or "")
         assert controller.publish_calls == 0
-        await handle.signal(DevPipelineWorkflow.abort, "stop-waiting")
-        result = await handle.result()
+        await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="stop-waiting"))
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED
         assert controller.publish_calls == 0
     finally:
@@ -95,7 +97,7 @@ async def test_drop_ticket_unblocks_test_deploying(
         assert snap.waiting_signal != WAITING_AUTHORIZE_TEST_DEPLOY
         await handle.signal(DevPipelineWorkflow.drop_ticket, "B")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
         final = await handle.query(DevPipelineWorkflow.snapshot)
         assert stage_of(final, "B") is TicketStage.DROPPED
@@ -155,7 +157,7 @@ async def test_retry_ticket_restarts_failed_child(
         await wait_snapshot(handle, lambda item: stage_of(item, "A") is TicketStage.FAILED)
         await handle.signal(DevPipelineWorkflow.retry_ticket, "A")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
         snap = await handle.query(DevPipelineWorkflow.snapshot)
         assert stage_of(snap, "A") is TicketStage.VERIFIED
@@ -197,7 +199,7 @@ async def test_promote_rule_records_request_and_rejects_automatic(
         assert "已记录" in (snap.promote_rule_status or "")
         controller.release("implement", "A")
         await authorize_test_deploy(handle)
-        result = await handle.result()
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.DONE
     finally:
         await worker.__aexit__(None, None, None)
@@ -217,8 +219,8 @@ async def test_abort_stops_running_children(
         await advance_to_implementing(handle, payload)
         await wait_snapshot(handle, lambda item: started(item, "A") and started(item, "B"))
         await wait_until(lambda: set(controller.started) >= {"A", "B"})
-        await handle.signal(DevPipelineWorkflow.abort, "stop-children")
-        result = await handle.result()
+        await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="stop-children"))
+        result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED
         assert result.blocked_reason is not None
         assert controller.publish_calls == 0

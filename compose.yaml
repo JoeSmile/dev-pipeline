@@ -1,0 +1,49 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    command: ["bash", "scripts/test-in-container.sh"]
+
+  temporal:
+    image: temporalio/temporal:1.5.1
+    profiles: ["temporal"]
+    command:
+      - server
+      - start-dev
+      - --ip
+      - "0.0.0.0"
+      - --port
+      - "7233"
+      - --headless
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "temporal",
+          "operator",
+          "cluster",
+          "health",
+          "--address",
+          "127.0.0.1:7233",
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  test-history:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["temporal"]
+    working_dir: /app
+    environment:
+      TEMPORAL_TARGET: temporal:7233
+    depends_on:
+      temporal:
+        condition: service_healthy
+    command: ["bash", "scripts/test-in-container.sh"]

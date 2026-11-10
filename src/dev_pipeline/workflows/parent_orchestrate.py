@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
@@ -48,6 +49,7 @@ class ParentOrchestrationMixin:
 
     _state: ParentState
     _children: dict[str, ChildWorkflowHandle[Any, TicketResult]]
+    _finish_terminal: Callable[[PipelineResult], Awaitable[PipelineResult]]
 
     def _move(self, dest: ParentStage, trigger: str) -> None:
         self._state.move(dest, trigger)
@@ -96,7 +98,7 @@ class ParentOrchestrationMixin:
             return await self._block(f"red-line fail: {exc}")
         if spike.red_line_failed:
             self._move(ParentStage.BLOCKED, "red_line_fail")
-            return state.finish_blocked("击穿红线且无防护")
+            return await self._finish_terminal(state.finish_blocked("击穿红线且无防护"))
         await workflow.wait_condition(
             lambda: state.spike_accepted is not None or state.abort_requested
         )
@@ -104,7 +106,7 @@ class ParentOrchestrationMixin:
             return await self._block(state.abort_reason)
         if state.spike_accepted is False:
             self._move(ParentStage.BLOCKED, "approve_spike_reject")
-            return state.finish_blocked("approve_spike 拒绝")
+            return await self._finish_terminal(state.finish_blocked("approve_spike 拒绝"))
         self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
         state.waiting = None
         return None
@@ -184,9 +186,9 @@ class ParentOrchestrationMixin:
                 retry_policy=NO_RETRY,
             )
         except ActivityError as exc:
-            return self._fail_test_deploy(f"测试部署失败，不得进入 Retro: {exc}")
+            return await self._fail_test_deploy(f"测试部署失败，不得进入 Retro: {exc}")
         if published.status != "succeeded":
-            return self._fail_test_deploy("测试部署失败，不得进入 Retro")
+            return await self._fail_test_deploy("测试部署失败，不得进入 Retro")
         state.test_deploy_status = TestDeployStatus.SUCCEEDED
         state.test_deploy_address = published.address
         self._move(ParentStage.RETRO, "test_deploy_success")
@@ -199,18 +201,19 @@ class ParentOrchestrationMixin:
         if state.abort_requested:
             return await self._block(state.abort_reason)
         self._move(ParentStage.DONE, "retro_written")
-        return state.result()
+        return await self._finish_terminal(state.result())
 
-    def _fail_test_deploy(self, reason: str) -> PipelineResult:
+    async def _fail_test_deploy(self, reason: str) -> PipelineResult:
         self._state.test_deploy_status = TestDeployStatus.FAILED
         self._move(ParentStage.BLOCKED, "test_deploy_failure")
-        return self._state.finish_blocked(reason)
+        return await self._finish_terminal(self._state.finish_blocked(reason))
 
     async def _block(self, reason: str) -> PipelineResult:
         await self._stop_children()
         if self._state.stage is not ParentStage.BLOCKED:
             self._move(ParentStage.BLOCKED, "abort")
-        return self._state.finish_blocked(reason)
+        return await self._finish_terminal(self._state.finish_blocked(reason))
+
 
     async def _stop_children(self) -> None:
         """Signal abort and cancel every running child before the parent blocks."""

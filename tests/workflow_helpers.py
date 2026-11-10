@@ -12,6 +12,7 @@ from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 from tests.stub_activities import StubController
 
+from dev_pipeline.activities.reopen import ReopenStarter
 from dev_pipeline.constants import DEFAULT_TASK_QUEUE, WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.models import (
     PipelineResult,
@@ -67,11 +68,12 @@ async def start_parent(
     queue: str | None = None,
 ) -> tuple[Worker, WorkflowHandle[DevPipelineWorkflow, PipelineResult]]:
     task_queue = queue or f"{DEFAULT_TASK_QUEUE}-{uuid.uuid4().hex[:8]}"
+    starter = ReopenStarter(env.client)
     worker = Worker(
         env.client,
         task_queue=task_queue,
         workflows=[DevPipelineWorkflow, TicketWorkflow],
-        activities=list(controller.activities()),
+        activities=[*controller.activities(), starter.start_reopened_workflow],
     )
     await worker.__aenter__()
     handle = await env.client.start_workflow(
@@ -118,6 +120,19 @@ async def authorize_test_deploy(
     )
     await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
     return snap
+
+
+async def wait_terminal(
+    handle: WorkflowHandle[DevPipelineWorkflow, PipelineResult],
+    *,
+    timeout: float = 15.0,
+) -> PipelineSnapshot:
+    """Wait until the parent has reached Done or Blocked (business terminal)."""
+    return await wait_snapshot(
+        handle,
+        lambda snap: snap.stage in {ParentStage.DONE, ParentStage.BLOCKED},
+        timeout=timeout,
+    )
 
 
 async def wait_until(predicate: object, *, timeout: float = 15.0) -> None:
