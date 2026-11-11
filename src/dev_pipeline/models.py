@@ -13,6 +13,25 @@ ReviewDecision = Literal["approve", "rework", "reject"]
 PublishTarget = Literal["test"]
 
 
+PENDING_FIELD = "待证"
+INTAKE_SOURCE_CLI = "cli"
+
+
+@dataclass
+class IntakeRecord:
+    """Shared Intake shape for CLI start and a later label-listener path.
+
+    Missing fields are marked ``待证``. CLI fills ``source=cli`` and leaves
+    reporter, request, and auto-run label unused until those tickets land.
+    """
+
+    jira_key: str
+    reporter: str = PENDING_FIELD
+    request: str = PENDING_FIELD
+    source: str = PENDING_FIELD
+    has_auto_run_label: str = PENDING_FIELD
+
+
 @dataclass
 class TicketSpec:
     """One implementation ticket on a Story, including dependency edges.
@@ -34,6 +53,7 @@ class StoryInput:
     config_root: str
     tickets: list[TicketSpec] = field(default_factory=list)
     summary: str = ""
+    intake: IntakeRecord | None = None
 
 
 @dataclass
@@ -281,6 +301,7 @@ class PipelineSnapshot:
     reopened_execution_id: str | None = None
     reopen_status: str | None = None
     budget: BudgetSnapshot | None = None
+    intake: IntakeRecord | None = None
 
 
 @dataclass

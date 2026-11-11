@@ -124,7 +124,29 @@ Worker 启动成功与配置根目录错误都会通过 structlog 记录，不�
 
 非 Windows 环境可以使用 `scripts/start-worker.sh --config-root /absolute/path`，约定与上面相同。
 
-## 7. 本骨架尚未包含的内容
+## 7. 用 CLI 启动进入 Intake
+
+Worker 已连接后，用 CLI 根据 Jira key 显式启动一条父执行。Jira 不是编排器；本入口只校验 key 形态，不拉取远端 Issue，也不监听标签。可复制的验收命令：
+
+```powershell
+dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
+```
+
+等价入口：
+
+```powershell
+python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config
+```
+
+可选参数：
+
+- `--execution-id`，省略则生成 UUID 并打印
+- `--temporal-target`，默认 `localhost:7233`
+- `--task-queue`，默认 `dev-pipeline`
+
+成功时标准输出会打印 `workflow_id`、`execution_id` 和 Jira key，并写明已进入 Intake。若省略 `--config-root`、路径不存在、不是绝对路径、目录缺少合法 `budget.toml`、Jira key 非法、Temporal 不可达，或目标 workflow id 已存在，进程会以中文错误非零退出。已存在的执行不会被当成启动成功。
+
+## 8. 本骨架尚未包含的内容
 
 - 真实 Coding / Review LLM Worker
 - Cursor CLI 运行时

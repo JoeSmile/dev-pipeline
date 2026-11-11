@@ -20,6 +20,7 @@ dev = [
 ]
 
 [project.scripts]
+dev-pipeline = "dev_pipeline.cli:main"
 dev-pipeline-worker = "dev_pipeline.worker:main"
 
 [build-system]

@@ -26,6 +26,14 @@ def scheduled_activity_names(history: WorkflowHistory) -> list[str]:
     return names
 
 
+def workflow_execution_started_count(history: WorkflowHistory) -> int:
+    """Return how many WorkflowExecutionStarted events are in the history."""
+
+    return sum(
+        1
+        for event in history.events
+        if event.event_type == EventType.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
+    )
 
 
 

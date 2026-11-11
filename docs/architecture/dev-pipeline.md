@@ -29,6 +29,7 @@ stateDiagram-v2
     Done --> [*]
 ```
 
+- 当前验收入口是 CLI `dev-pipeline start --jira-key DP-xx --config-root <绝对路径>`，启动后进入 Intake。CLI 与后续标签监听共用 `IntakeRecord`（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`），CLI 填写 `source=cli`。Jira 不当编排器。启动失败必须可见并中止，不得说成「可能已存在」。
 - 父执行阶段：`Intake` → `ScopeLocked` → `SchemeDecided` →（可选 `Spike`）→ `TicketsReady` → 聚合 `Implementing` → `TestDeploying` → `Retro` → `Done`，或在门禁失败 / `abort` / 测试部署失败时进入 `Blocked`。
 - 启动清单里的每张 Ticket 都是必做的。只有启动后的 `drop_ticket` 能把它从清单中移除；被移除的 Ticket 不再阻挡 `TestDeploying` / `Retro`。
 - 只要仍有未移除 Ticket 处于 `Pending` / `Implementing` / `Reviewing` / `HumanGate` / `Verifying`，或失败尚未处理，父执行不得进入 `TestDeploying` 或 `Retro`。

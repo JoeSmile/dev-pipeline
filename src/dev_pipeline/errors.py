@@ -1,4 +1,4 @@
-"""Operator-visible errors for illegal stage moves, config-root, and publish targets."""
+"""Operator-visible errors for illegal stage moves, config, start, and publish targets."""
 
 
 class IllegalTransition(Exception):
@@ -31,3 +31,8 @@ class BudgetConfigError(ValueError):
 
 class ProductionDeployForbidden(ValueError):
     """Any production (or non-test) publish target is rejected."""
+
+
+class PipelineStartError(ValueError):
+    """CLI or client start failed visibly and must abort."""
+

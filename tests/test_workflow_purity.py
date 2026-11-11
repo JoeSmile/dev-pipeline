@@ -21,6 +21,8 @@ FORBIDDEN_MODULES = frozenset(
         "pathlib",
         "dev_pipeline.config_root",
         "dev_pipeline.worker",
+        "dev_pipeline.cli",
+        "dev_pipeline.budget_config",
     }
 )
 FORBIDDEN_CALLS = frozenset(

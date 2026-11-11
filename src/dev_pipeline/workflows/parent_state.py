@@ -164,6 +164,7 @@ class ParentState:
         """Build the queryable progress snapshot."""
         story_id = self.input.story_id if self.input is not None else ""
         execution_id = self.input.execution_id if self.input is not None else ""
+        intake = self.input.intake if self.input is not None else None
         return PipelineSnapshot(
             story_id=story_id,
             execution_id=execution_id,
@@ -179,4 +180,5 @@ class ParentState:
             reopened_execution_id=self.reopened_execution_id,
             reopen_status=self.reopen_status,
             budget=self.budget_view(),
+            intake=intake,
         )

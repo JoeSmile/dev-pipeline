@@ -8,7 +8,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 ## 当前阶段
 
-[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，以及 [DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`）已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
+[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，[DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 预算闸门已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。用 CLI 根据 Jira key 启动一条进入 Intake 的父执行见 [DP-13](https://weiperfect007.atlassian.net/browse/DP-13)。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
 
 真实 Coding / Review LLM Worker、Cursor CLI 运行时和 `agent-platform` 对接尚未实现。不要把本仓库当成整条流水线已经完成。
 
@@ -42,6 +42,20 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 已用、限额、剩余、已停止路径和 `last_breach` 挂在现有父执行查询快照的 `budget` 字段上，不另开第二套 Query。真实 RAG / 多模型调度细节不在本票范围。
 
+## 用 CLI 启动进入 Intake（DP-13）
+
+Jira 只提供 key，不当编排器。用本仓库的 CLI 显式启动一条 `DevPipelineWorkflow`，执行进入 Intake。自动按 Jira 标签开跑是 [DP-39](https://weiperfect007.atlassian.net/browse/DP-39)，本入口不实现监听器。CLI 与后续监听路径共用同一套 Intake 形状（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`）；CLI 填写 `source=cli`。
+
+可复制的验收命令（先准备好已存在的配置根目录，并启动 Worker，步骤见 `docs/dev-setup.md`）：
+
+```powershell
+dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
+```
+
+等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `localhost:7233`）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
+
+配置根目录缺失、非法，或缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。查询 / Signal CLI 见后续 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)。
+
 ## 流程状态机
 
 父执行与 Child 是两台状态机，不要画在同一张图里。父执行进入 `TestDeploying` 的边是 `Implementing → TestDeploying`，不是 `Verifying --> TestDeploying`。
@@ -50,7 +64,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Intake: Jira Signal / 人工开单
+    [*] --> Intake: CLI start / 后续标签监听
     Intake --> ScopeLocked: 范围+非目标已锁
     ScopeLocked --> SchemeDecided: 方案取舍已拍
     SchemeDecided --> Spike: 假设可能击穿 L0

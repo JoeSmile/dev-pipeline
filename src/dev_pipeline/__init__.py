@@ -5,9 +5,16 @@ from dev_pipeline.errors import (
     BudgetConfigError,
     ConfigRootError,
     IllegalTransition,
+    PipelineStartError,
     ProductionDeployForbidden,
 )
-from dev_pipeline.models import PipelineResult, PipelineSnapshot, StoryInput, TicketSpec
+from dev_pipeline.models import (
+    IntakeRecord,
+    PipelineResult,
+    PipelineSnapshot,
+    StoryInput,
+    TicketSpec,
+)
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 
 __version__ = "0.0.0"
@@ -18,7 +25,9 @@ __all__ = [
     "BudgetConfigError",
     "ConfigRootError",
     "IllegalTransition",
+    "IntakeRecord",
     "ParentStage",
+    "PipelineStartError",
     "PipelineResult",
     "PipelineSnapshot",
     "ProductionDeployForbidden",
