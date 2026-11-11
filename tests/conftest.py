@@ -17,10 +17,23 @@ def _dev_server_path() -> str | None:
     return path or None
 
 
+# 待证占位限额，不是已签批的正式配额。仅供测试夹具使用，可被测试覆盖。
+_PENDING_PLACEHOLDER_BUDGET = '''\
+# 待证占位限额，不是已签批的正式配额。
+units = ["tokens", "calls", "cost"]
+
+[limits]
+tokens = 100000
+calls = 50
+cost = 1000
+'''
+
+
 @pytest.fixture
 def tmp_config_root(tmp_path: Path) -> Path:
     root = tmp_path / "config-root"
     root.mkdir()
+    (root / "budget.toml").write_text(_PENDING_PLACEHOLDER_BUDGET, encoding="utf-8")
     return root
 
 

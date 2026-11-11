@@ -22,6 +22,12 @@ New-Item -ItemType Directory -Force -Path D:\pipeline-config
 
 后面的 `CURSOR_API_KEY` 等密钥会放在这个目录里，本骨架还不读取它们，但路径本身必须先合法存在。
 
+该目录还必须包含 `budget.toml`（可从仓库 `docs/examples/budget.toml` 复制）。文件里的限额数字均为待证占位，须经负责人签批后才视为正式限额。缺少该文件或内容非法时，Worker 与 Workflow 都会以中文错误退出，不会使用隐藏默认限额继续执行。
+
+```powershell
+Copy-Item .\docs\examples\budget.toml D:\pipeline-config\budget.toml
+```
+
 ## 2. 安装依赖
 
 在仓库根目录：
@@ -124,4 +130,4 @@ Worker 启动成功与配置根目录错误都会通过 structlog 记录，不�
 - Cursor CLI 运行时
 - 与 `agent-platform` 的对接
 - 真实测试环境发布（目前只有拒绝生产目标的桩 Activity）
-- 进度心跳的完整实现（目前是可查询的阶段 / Ticket / 测试部署快照）
+- 进度心跳的完整实现（目前是可查询的阶段 / Ticket / 测试部署 / 预算花费快照）

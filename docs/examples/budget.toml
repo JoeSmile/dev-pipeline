@@ -1,0 +1,13 @@
+# 配置根目录预算闸门样例。将本文件复制为 <config-root>/budget.toml 后按需修改。
+# 下列数字均为待证占位限额，须经负责人签批后才视为正式限额。
+# 至少启用一个计量单位：tokens（token 数）、calls（调用次数）、cost（整数成本单位，不是已签批币种）。
+
+units = ["tokens", "calls", "cost"]
+
+[limits]
+# 待证
+tokens = 100000
+# 待证
+calls = 50
+# 待证（整数成本单位，不是已签批的币种或单价）
+cost = 1000

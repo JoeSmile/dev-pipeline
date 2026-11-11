@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from dev_pipeline.budget import (
+    BudgetAmounts,
+    BudgetBreach,
+    BudgetConfig,
+    BudgetSnapshot,
+    build_budget_snapshot,
+)
 from dev_pipeline.models import (
     PipelineResult,
     PipelineSnapshot,
@@ -43,6 +50,13 @@ class ParentState:
         self.tickets: dict[str, TicketSnapshot] = {}
         self.specs: list[TicketSpec] = []
         self.ticket_event = False
+        self.budget_config: BudgetConfig | None = None
+        self.budget_spent = BudgetAmounts()
+        self.budget_stopped_paths: list[str] = []
+        self.budget_no_new_evidence_paths: list[str] = []
+        self.budget_last_breach: BudgetBreach | None = None
+        self.budget_last_stop_reason: str | None = None
+        self.costly_busy = False
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -59,6 +73,16 @@ class ParentState:
             for spec in specs
         }
         self.ticket_event = True
+
+    def install_budget(self, config: BudgetConfig) -> None:
+        """Install the loaded budget config and reset spent / stop records."""
+        self.budget_config = config
+        self.budget_spent = BudgetAmounts()
+        self.budget_stopped_paths = []
+        self.budget_no_new_evidence_paths = []
+        self.budget_last_breach = None
+        self.budget_last_stop_reason = None
+        self.costly_busy = False
 
     def ticket_list(self) -> list[TicketSnapshot]:
         """Return ticket snapshots in the installed spec order."""
@@ -123,6 +147,19 @@ class ParentState:
             test_deploy_address=self.test_deploy_address,
         )
 
+    def budget_view(self) -> BudgetSnapshot | None:
+        """Build the queryable budget view, or None before config is loaded."""
+        if self.budget_config is None:
+            return None
+        return build_budget_snapshot(
+            self.budget_config,
+            self.budget_spent,
+            stopped_paths=self.budget_stopped_paths,
+            no_new_evidence_paths=self.budget_no_new_evidence_paths,
+            last_breach=self.budget_last_breach,
+            last_stop_reason=self.budget_last_stop_reason,
+        )
+
     def snapshot(self) -> PipelineSnapshot:
         """Build the queryable progress snapshot."""
         story_id = self.input.story_id if self.input is not None else ""
@@ -141,4 +178,5 @@ class ParentState:
             test_deploy_address=self.test_deploy_address,
             reopened_execution_id=self.reopened_execution_id,
             reopen_status=self.reopen_status,
+            budget=self.budget_view(),
         )

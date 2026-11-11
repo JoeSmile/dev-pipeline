@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 
@@ -279,6 +280,7 @@ class PipelineSnapshot:
     test_deploy_address: str | None = None
     reopened_execution_id: str | None = None
     reopen_status: str | None = None
+    budget: BudgetSnapshot | None = None
 
 
 @dataclass

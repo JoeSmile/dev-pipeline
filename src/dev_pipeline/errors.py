@@ -25,5 +25,9 @@ class ConfigRootError(ValueError):
     """The required config-root is missing or invalid; execution must not continue."""
 
 
+class BudgetConfigError(ValueError):
+    """The required budget.toml is missing or invalid; execution must not continue."""
+
+
 class ProductionDeployForbidden(ValueError):
     """Any production (or non-test) publish target is rejected."""

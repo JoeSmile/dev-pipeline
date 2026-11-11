@@ -7,6 +7,7 @@ from temporalio import workflow
 from dev_pipeline.models import PipelineResult, PipelineSnapshot, StoryInput
 from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows.child_start import TicketChildHandle
+from dev_pipeline.workflows.parent_budget import ParentBudgetMixin
 from dev_pipeline.workflows.parent_child_signals import ParentChildSignalMixin
 from dev_pipeline.workflows.parent_orchestrate import ParentOrchestrationMixin
 from dev_pipeline.workflows.parent_reopen import ParentReopenMixin
@@ -16,7 +17,11 @@ from dev_pipeline.workflows.parent_state import ParentState
 
 @workflow.defn
 class DevPipelineWorkflow(
-    ParentSignalMixin, ParentChildSignalMixin, ParentReopenMixin, ParentOrchestrationMixin
+    ParentSignalMixin,
+    ParentChildSignalMixin,
+    ParentReopenMixin,
+    ParentBudgetMixin,
+    ParentOrchestrationMixin,
 ):
     """Parent legal path, human gates, child orchestration, and TestDeploying."""
 

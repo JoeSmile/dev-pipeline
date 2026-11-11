@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from temporalio import activity
 
+from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
 from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
@@ -55,6 +56,22 @@ class StubController:
     publish_calls: int = 0
     implement_fail_remaining: dict[str, int] = field(default_factory=dict)
     workspace: WorkspaceClaimStore = field(default_factory=WorkspaceClaimStore)
+    costly_queue: dict[str, list[CostlyPathResult]] = field(default_factory=dict)
+    costly_started: list[str] = field(default_factory=list)
+
+    def queue_costly(self, path: str, result: CostlyPathResult) -> None:
+        self.costly_queue.setdefault(path, []).append(result)
+
+    def _next_costly(self, path: str) -> CostlyPathResult:
+        queue = self.costly_queue.get(path, [])
+        if queue:
+            return queue.pop(0)
+        return CostlyPathResult(
+            path=path,
+            has_new_evidence=True,
+            usage=BudgetAmounts(calls=1),
+            detail=f"test-{path}",
+        )
 
     def gate(self, kind: str, ticket_id: str) -> asyncio.Event:
         store = {
@@ -87,6 +104,12 @@ class StubController:
             from dev_pipeline.config_root import validate_config_root_path
 
             return validate_config_root_path(config_root)
+
+        @activity.defn(name="load_budget_config")
+        async def load_budget_config(config_root: str) -> BudgetConfig:
+            from dev_pipeline.budget_config import load_budget_config_from_path
+
+            return load_budget_config_from_path(config_root)
 
         @activity.defn(name="run_spike")
         async def run_spike(payload: SpikeInput) -> SpikeResult:
@@ -137,13 +160,32 @@ class StubController:
         async def write_retro_record(payload: RetroInput) -> RetroResult:
             return RetroResult(recorded=True, detail=payload.story_id)
 
+        @activity.defn(name="run_debate")
+        async def run_debate(payload: CostlyPathInput) -> CostlyPathResult:
+            controller.costly_started.append("debate")
+            return controller._next_costly("debate")
+
+        @activity.defn(name="run_rag")
+        async def run_rag(payload: CostlyPathInput) -> CostlyPathResult:
+            controller.costly_started.append("rag")
+            return controller._next_costly("rag")
+
+        @activity.defn(name="run_model_call")
+        async def run_model_call(payload: CostlyPathInput) -> CostlyPathResult:
+            controller.costly_started.append("model")
+            return controller._next_costly("model")
+
         return (
             validate_config_root,
+            load_budget_config,
             run_spike,
             claim_ticket_workspace,
             implement_ticket,
             review_ticket,
             verify_ticket,
+            run_debate,
+            run_rag,
+            run_model_call,
             publish_to_test_env,
             write_retro_record,
         )

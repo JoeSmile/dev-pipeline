@@ -49,6 +49,7 @@ class ParentOrchestrationMixin:
     _state: ParentState
     _children: dict[str, TicketChildHandle]
     _finish_terminal: Callable[[PipelineResult], Awaitable[PipelineResult]]
+    _install_budget: Callable[[], Awaitable[None]]
 
     def _move(self, dest: ParentStage, trigger: str) -> None:
         self._state.move(dest, trigger)
@@ -62,6 +63,7 @@ class ParentOrchestrationMixin:
             start_to_close_timeout=ACTIVITY_TIMEOUT,
             retry_policy=NO_RETRY,
         )
+        await self._install_budget()
 
     async def _wait_for_scope(self) -> None:
         state = self._state

@@ -86,8 +86,10 @@ stateDiagram-v2
 
 `lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
-进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态。完整心跳尚未实现。
+进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态，以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。完整心跳尚未实现。
 
 ## 配置根目录
 
 启动 Worker 必须显式传入已存在的绝对路径 `--config-root`。缺失或无效必须可见地失败，见 `docs/dev-setup.md`。Workflow 模块本身不做文件系统访问；校验发生在 Worker 入口与 `validate_config_root` Activity。
+
+配置根目录必须包含 `budget.toml`（样例见 `docs/examples/budget.toml`）。计量单位与限额可配置；数字在签批前标为待证，缺失或非法时以中文错误失败，不使用隐藏默认限额。父执行在 bootstrap 时通过 `load_budget_config` Activity 装入账本。互辩 / 检索 / 多模型桩必须经父执行闸门 `start_costly_path` 才能启动；超限即停并记 `Bad`，无新证据则只停该路径。超限不取消同 Story 其他 Ticket。

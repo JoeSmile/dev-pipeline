@@ -9,13 +9,14 @@ from dataclasses import dataclass
 import structlog
 
 from dev_pipeline.activities import STUB_ACTIVITIES, ReopenStarter
+from dev_pipeline.budget_config import load_budget_config_from_path
 from dev_pipeline.config_root import validate_config_root_path
 from dev_pipeline.constants import (
     CLIENT_CONNECT_TIMEOUT,
     DEFAULT_TASK_QUEUE,
     DEFAULT_TEMPORAL_TARGET,
 )
-from dev_pipeline.errors import ConfigRootError
+from dev_pipeline.errors import BudgetConfigError, ConfigRootError
 from dev_pipeline.workflows import WORKFLOWS
 
 logger = structlog.get_logger("dev_pipeline.worker")
@@ -91,6 +92,7 @@ async def run_worker(args: WorkerArgs) -> None:
     from temporalio.worker import Worker
 
     config_root = validate_config_root_path(args.config_root)
+    load_budget_config_from_path(config_root)
     client = await Client.connect(
         args.temporal_target,
         connect_timeout=CLIENT_CONNECT_TIMEOUT,
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         args = parse_worker_args(argv)
         asyncio.run(run_worker(args))
-    except ConfigRootError as exc:
+    except (ConfigRootError, BudgetConfigError) as exc:
         logger.error(str(exc))
         raise SystemExit(2) from exc
 
