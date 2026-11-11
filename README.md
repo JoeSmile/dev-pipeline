@@ -8,7 +8,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 ## 当前阶段
 
-[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，[DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 预算闸门已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。用 CLI 根据 Jira key 启动一条进入 Intake 的父执行见 [DP-13](https://weiperfect007.atlassian.net/browse/DP-13)。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
+[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，[DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 预算闸门已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。用 CLI 根据 Jira key 启动一条进入 Intake 的父执行见 [DP-13](https://weiperfect007.atlassian.net/browse/DP-13)。父执行阶段变更镜像回对应 Jira 票见 [DP-14](https://weiperfect007.atlassian.net/browse/DP-14)。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
 
 真实 Coding / Review LLM Worker、Cursor CLI 运行时和 `agent-platform` 对接尚未实现。不要把本仓库当成整条流水线已经完成。
 
@@ -55,6 +55,14 @@ dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
 等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `localhost:7233`）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
 
 配置根目录缺失、非法，或缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。查询 / Signal CLI 见后续 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)。
+
+## 把阶段镜像回 Jira（DP-14）
+
+Temporal History 是阶段真相；Jira 只是给人看的镜像，不当编排器。父执行每次阶段变更（含启动后的 Intake）后，会把当前阶段同步到 Intake 载荷上的那张 Jira 票。没有 Jira key 时不同步。
+
+默认镜像是一条幂等、带前缀 `【DevPipeline 阶段镜像】` 的评论（同一 `execution_id` 只维护一条，重试更新而不重复发）。不把 DevPipeline 阶段映射成 Jira 工作流状态，以免撞上项目工作流。若配置根目录的 `jira.toml` 填写了 `stage_field`，会同时写入该自定义字段；字段的具体名称 / ID 仍为**待证**，必须可在配置中覆盖。样例见 `docs/examples/jira.toml`。令牌放在配置根目录下的独立文件，不进命令行、History 或证据日志。
+
+同步在 Activity 中完成，带显式超时并允许重试。配置缺失或非法会以中文错误可见地失败，不会挂起，也不会当成成功。重试耗尽后父执行阶段不变，现有查询快照的 `jira_mirror` 字段记录 `镜像滞后` 和原因，并尽最大努力在票上留下 `【DevPipeline 镜像滞后】` 评论。Jira 上过期或被手改的值不会回写 Workflow。入站的评论 / 字段变更不产生 Signal，也不触发阶段转移。
 
 ## 流程状态机
 
@@ -172,7 +180,7 @@ stateDiagram-v2
 7. 任何生产发布禁止。测试环境受控发布须另有明确授权。
 8. 未确认 `lock_scope` / `decide_scheme` 前不得编码。
 9. 单文件超过 2000 行视为 Review 阻断。
-10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal、各 Ticket 状态、测试部署状态、已花费预算）。
+10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal、各 Ticket 状态、测试部署状态、已花费预算、Jira 镜像 / 镜像滞后）。
 
 优先级：数据 / 任务不丢失 > 可观测与可回放 > 人工门禁清楚 > 迭代速度 > 极致性能。
 

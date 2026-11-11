@@ -9,6 +9,7 @@ from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows.child_start import TicketChildHandle
 from dev_pipeline.workflows.parent_budget import ParentBudgetMixin
 from dev_pipeline.workflows.parent_child_signals import ParentChildSignalMixin
+from dev_pipeline.workflows.parent_jira_mirror import ParentJiraMirrorMixin
 from dev_pipeline.workflows.parent_orchestrate import ParentOrchestrationMixin
 from dev_pipeline.workflows.parent_reopen import ParentReopenMixin
 from dev_pipeline.workflows.parent_signals import ParentSignalMixin
@@ -21,6 +22,7 @@ class DevPipelineWorkflow(
     ParentChildSignalMixin,
     ParentReopenMixin,
     ParentBudgetMixin,
+    ParentJiraMirrorMixin,
     ParentOrchestrationMixin,
 ):
     """Parent legal path, human gates, child orchestration, and TestDeploying."""
@@ -51,7 +53,7 @@ class DevPipelineWorkflow(
             blocked = await self._run_spike()
             if blocked is not None:
                 return blocked
-        self._advance_to_implementing()
+        await self._advance_to_implementing()
         if state.abort_requested:
             return await self._block("abort")
         await self._orchestrate_tickets()
@@ -59,12 +61,12 @@ class DevPipelineWorkflow(
             return await self._block(state.abort_reason)
         return await self._run_test_deploy_and_retro()
 
-    def _advance_to_implementing(self) -> None:
-        self._move(ParentStage.TICKETS_READY, "no_high_risk_assumption")
+    async def _advance_to_implementing(self) -> None:
+        await self._move(ParentStage.TICKETS_READY, "no_high_risk_assumption")
         self._state.waiting = None
         if self._state.abort_requested:
             return
-        self._move(ParentStage.IMPLEMENTING, "start_eligible_children")
+        await self._move(ParentStage.IMPLEMENTING, "start_eligible_children")
 
     @workflow.query
     def snapshot(self) -> PipelineSnapshot:

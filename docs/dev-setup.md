@@ -28,6 +28,8 @@ New-Item -ItemType Directory -Force -Path D:\pipeline-config
 Copy-Item .\docs\examples\budget.toml D:\pipeline-config\budget.toml
 ```
 
+如需把父执行阶段镜像回 Jira，再准备 `jira.toml`（可从 `docs/examples/jira.toml` 复制）以及配置根目录下的令牌文件（由 `api_token_file` 指向文件名）。Worker 启动不强制要求该文件；缺失或非法时镜像 Activity 会以中文错误失败，并在快照上留下「镜像滞后」，不会让 Workflow 把同步当成成功。可选的 `stage_field`（自定义字段名 / ID）仍为待证。不要把令牌写进 `jira.toml`、命令行或证据日志。
+
 ## 2. 安装依赖
 
 在仓库根目录：

@@ -44,6 +44,7 @@ class ReopenStarter:
             config_root=payload.config_root,
             tickets=list(payload.tickets),
             summary=payload.summary,
+            intake=payload.intake,
         )
         try:
             await self._client.start_workflow(

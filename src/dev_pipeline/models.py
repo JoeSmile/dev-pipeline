@@ -234,6 +234,7 @@ class ReopenStartInput:
     task_queue: str
     tickets: list[TicketSpec] = field(default_factory=list)
     summary: str = ""
+    intake: IntakeRecord | None = None
 
 
 @dataclass
@@ -284,6 +285,16 @@ class TicketSnapshot:
 
 
 @dataclass
+class JiraMirrorSnapshot:
+    """Queryable Jira mirror status on the existing parent snapshot (DP-14 / DP-27)."""
+
+    last_mirrored_stage: str | None = None
+    lagged: bool = False
+    lag_marker: str | None = None
+    lag_reason: str | None = None
+
+
+@dataclass
 class PipelineSnapshot:
     """Thin queryable progress view (DP-47): stage, waiting signal, tickets, deploy."""
 
@@ -302,6 +313,7 @@ class PipelineSnapshot:
     reopen_status: str | None = None
     budget: BudgetSnapshot | None = None
     intake: IntakeRecord | None = None
+    jira_mirror: JiraMirrorSnapshot | None = None
 
 
 @dataclass

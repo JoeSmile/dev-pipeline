@@ -36,3 +36,11 @@ class ProductionDeployForbidden(ValueError):
 class PipelineStartError(ValueError):
     """CLI or client start failed visibly and must abort."""
 
+
+class JiraConfigError(ValueError):
+    """The jira.toml or token file is missing or invalid; mirror must not succeed."""
+
+
+class JiraMirrorError(RuntimeError):
+    """A Jira HTTP call failed; the Workflow stage must stay unchanged."""
+

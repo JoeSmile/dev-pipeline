@@ -23,6 +23,8 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.worker",
         "dev_pipeline.cli",
         "dev_pipeline.budget_config",
+        "dev_pipeline.jira_config",
+        "dev_pipeline.jira_client",
     }
 )
 FORBIDDEN_CALLS = frozenset(

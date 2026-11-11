@@ -51,8 +51,15 @@ class ParentOrchestrationMixin:
     _finish_terminal: Callable[[PipelineResult], Awaitable[PipelineResult]]
     _install_budget: Callable[[], Awaitable[None]]
 
-    def _move(self, dest: ParentStage, trigger: str) -> None:
+    async def _move(self, dest: ParentStage, trigger: str) -> None:
+        previous = self._state.stage
         self._state.move(dest, trigger)
+        if self._state.stage is not previous:
+            await self._after_stage_change()
+
+    async def _after_stage_change(self) -> None:
+        """Hook for mixins that must run after a real parent stage change."""
+        return
 
     async def _bootstrap(self, payload: StoryInput) -> None:
         self._state.input = payload
@@ -64,6 +71,7 @@ class ParentOrchestrationMixin:
             retry_policy=NO_RETRY,
         )
         await self._install_budget()
+        await self._after_stage_change()
 
     async def _wait_for_scope(self) -> None:
         state = self._state
@@ -72,7 +80,7 @@ class ParentOrchestrationMixin:
         await workflow.wait_condition(lambda: state.scope is not None or state.abort_requested)
         if state.abort_requested:
             return
-        self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
+        await self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
         state.waiting = "decide_scheme"
 
     async def _wait_for_scheme(self) -> None:
@@ -80,13 +88,13 @@ class ParentOrchestrationMixin:
         await workflow.wait_condition(lambda: state.scheme is not None or state.abort_requested)
         if state.abort_requested:
             return
-        self._move(ParentStage.SCHEME_DECIDED, "decide_scheme")
+        await self._move(ParentStage.SCHEME_DECIDED, "decide_scheme")
         state.waiting = None
 
     async def _run_spike(self) -> PipelineResult | None:
         state = self._state
         assert state.input is not None
-        self._move(ParentStage.SPIKE, "high_risk_assumption")
+        await self._move(ParentStage.SPIKE, "high_risk_assumption")
         state.waiting = "approve_spike"
         try:
             spike: SpikeResult = await workflow.execute_activity(
@@ -98,7 +106,7 @@ class ParentOrchestrationMixin:
         except ActivityError as exc:
             return await self._block(f"red-line fail: {exc}")
         if spike.red_line_failed:
-            self._move(ParentStage.BLOCKED, "red_line_fail")
+            await self._move(ParentStage.BLOCKED, "red_line_fail")
             return await self._finish_terminal(state.finish_blocked("击穿红线且无防护"))
         await workflow.wait_condition(
             lambda: state.spike_accepted is not None or state.abort_requested
@@ -106,9 +114,9 @@ class ParentOrchestrationMixin:
         if state.abort_requested:
             return await self._block(state.abort_reason)
         if state.spike_accepted is False:
-            self._move(ParentStage.BLOCKED, "approve_spike_reject")
+            await self._move(ParentStage.BLOCKED, "approve_spike_reject")
             return await self._finish_terminal(state.finish_blocked("approve_spike 拒绝"))
-        self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
+        await self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
         state.waiting = None
         return None
 
@@ -173,7 +181,7 @@ class ParentOrchestrationMixin:
     async def _run_test_deploy_and_retro(self) -> PipelineResult:
         state = self._state
         assert state.input is not None
-        self._move(ParentStage.TEST_DEPLOYING, "authorize_test_deploy")
+        await self._move(ParentStage.TEST_DEPLOYING, "authorize_test_deploy")
         state.waiting = None
         state.test_deploy_status = TestDeployStatus.IN_PROGRESS
         request = PublishRequest(
@@ -194,7 +202,7 @@ class ParentOrchestrationMixin:
             return await self._fail_test_deploy("测试部署失败，不得进入 Retro")
         state.test_deploy_status = TestDeployStatus.SUCCEEDED
         state.test_deploy_address = published.address
-        self._move(ParentStage.RETRO, "test_deploy_success")
+        await self._move(ParentStage.RETRO, "test_deploy_success")
         await workflow.execute_activity(
             write_retro_record,
             RetroInput(story_id=state.input.story_id, execution_id=state.input.execution_id),
@@ -203,18 +211,18 @@ class ParentOrchestrationMixin:
         )
         if state.abort_requested:
             return await self._block(state.abort_reason)
-        self._move(ParentStage.DONE, "retro_written")
+        await self._move(ParentStage.DONE, "retro_written")
         return await self._finish_terminal(state.result())
 
     async def _fail_test_deploy(self, reason: str) -> PipelineResult:
         self._state.test_deploy_status = TestDeployStatus.FAILED
-        self._move(ParentStage.BLOCKED, "test_deploy_failure")
+        await self._move(ParentStage.BLOCKED, "test_deploy_failure")
         return await self._finish_terminal(self._state.finish_blocked(reason))
 
     async def _block(self, reason: str) -> PipelineResult:
         await self._stop_children()
         if self._state.stage is not ParentStage.BLOCKED:
-            self._move(ParentStage.BLOCKED, "abort")
+            await self._move(ParentStage.BLOCKED, "abort")
         return await self._finish_terminal(self._state.finish_blocked(reason))
 
 

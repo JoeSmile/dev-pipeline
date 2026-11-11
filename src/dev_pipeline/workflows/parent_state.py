@@ -9,7 +9,9 @@ from dev_pipeline.budget import (
     BudgetSnapshot,
     build_budget_snapshot,
 )
+from dev_pipeline.jira_mirror import LAG_MARKER_LABEL
 from dev_pipeline.models import (
+    JiraMirrorSnapshot,
     PipelineResult,
     PipelineSnapshot,
     ReopenRequest,
@@ -57,6 +59,7 @@ class ParentState:
         self.budget_last_breach: BudgetBreach | None = None
         self.budget_last_stop_reason: str | None = None
         self.costly_busy = False
+        self.jira_mirror: JiraMirrorSnapshot | None = None
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -147,6 +150,32 @@ class ParentState:
             test_deploy_address=self.test_deploy_address,
         )
 
+    def jira_issue_key(self) -> str | None:
+        """Return the Intake Jira key when one is present on the start payload."""
+        if self.input is None or self.input.intake is None:
+            return None
+        key = self.input.intake.jira_key.strip()
+        return key or None
+
+    def record_jira_mirror_success(self, stage: str) -> None:
+        """Record a successful stage mirror and clear any previous lag."""
+        self.jira_mirror = JiraMirrorSnapshot(
+            last_mirrored_stage=stage,
+            lagged=False,
+            lag_marker=None,
+            lag_reason=None,
+        )
+
+    def record_jira_mirror_lag(self, reason: str) -> None:
+        """Record 镜像滞后 without changing the current parent stage."""
+        last = None if self.jira_mirror is None else self.jira_mirror.last_mirrored_stage
+        self.jira_mirror = JiraMirrorSnapshot(
+            last_mirrored_stage=last,
+            lagged=True,
+            lag_marker=LAG_MARKER_LABEL,
+            lag_reason=reason,
+        )
+
     def budget_view(self) -> BudgetSnapshot | None:
         """Build the queryable budget view, or None before config is loaded."""
         if self.budget_config is None:
@@ -181,4 +210,5 @@ class ParentState:
             reopen_status=self.reopen_status,
             budget=self.budget_view(),
             intake=intake,
+            jira_mirror=self.jira_mirror,
         )

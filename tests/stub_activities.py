@@ -9,6 +9,14 @@ from dataclasses import dataclass, field
 from temporalio import activity
 
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
+from dev_pipeline.jira_mirror import (
+    InMemoryJira,
+    JiraLagMarkerInput,
+    JiraStageMirrorInput,
+    JiraStageMirrorResult,
+    mark_mirror_lag,
+    mirror_stage,
+)
 from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
@@ -58,6 +66,13 @@ class StubController:
     workspace: WorkspaceClaimStore = field(default_factory=WorkspaceClaimStore)
     costly_queue: dict[str, list[CostlyPathResult]] = field(default_factory=dict)
     costly_started: list[str] = field(default_factory=list)
+    jira: InMemoryJira = field(default_factory=InMemoryJira)
+    jira_fail_remaining: int = 0
+    jira_always_fail: bool = False
+    jira_stage_field: str | None = None
+    jira_mirror_calls: list[JiraStageMirrorInput] = field(default_factory=list)
+    jira_lag_calls: list[JiraLagMarkerInput] = field(default_factory=list)
+    jira_mirror_attempts: int = 0
 
     def queue_costly(self, path: str, result: CostlyPathResult) -> None:
         self.costly_queue.setdefault(path, []).append(result)
@@ -175,6 +190,26 @@ class StubController:
             controller.costly_started.append("model")
             return controller._next_costly("model")
 
+        @activity.defn(name="mirror_parent_stage")
+        async def mirror_parent_stage(payload: JiraStageMirrorInput) -> JiraStageMirrorResult:
+            controller.jira_mirror_attempts += 1
+            controller.jira_mirror_calls.append(payload)
+            if controller.jira_always_fail:
+                raise RuntimeError("jira unavailable")
+            if controller.jira_fail_remaining > 0:
+                controller.jira_fail_remaining -= 1
+                raise RuntimeError("jira unavailable")
+            return mirror_stage(
+                controller.jira,
+                payload,
+                stage_field=controller.jira_stage_field,
+            )
+
+        @activity.defn(name="mark_jira_mirror_lag")
+        async def mark_jira_mirror_lag(payload: JiraLagMarkerInput) -> None:
+            controller.jira_lag_calls.append(payload)
+            mark_mirror_lag(controller.jira, payload)
+
         return (
             validate_config_root,
             load_budget_config,
@@ -186,6 +221,8 @@ class StubController:
             run_debate,
             run_rag,
             run_model_call,
+            mirror_parent_stage,
+            mark_jira_mirror_lag,
             publish_to_test_env,
             write_retro_record,
         )

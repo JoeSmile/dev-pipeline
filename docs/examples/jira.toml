@@ -1,0 +1,11 @@
+# Jira 阶段镜像配置。
+# 默认镜像方式是一条带前缀「【DevPipeline 阶段镜像】」的幂等评论。
+# 可选的自定义字段名 / ID（stage_field）仍为待证，未配置则只写评论。
+# 令牌必须放在配置根目录下的独立文件中，不要写在本文件、命令行或 Workflow 参数里。
+
+base_url = "https://example.atlassian.net"
+email = "pipeline-bot@example.com"
+api_token_file = "jira-api-token"
+
+# 待证：写入该自定义字段（字段名或 customfield_*）。取消注释并填入经批准的字段后才会同步字段。
+# stage_field = "customfield_XXXXX"
