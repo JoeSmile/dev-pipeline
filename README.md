@@ -52,7 +52,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
 ```
 
-等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `localhost:7233`）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
+等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `127.0.0.1:7233`，即已运行的官方 Temporal）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
 
 锁定范围（人工门禁，无需产品界面）：
 
@@ -233,15 +233,19 @@ stateDiagram-v2
 
 远程仓库：[JoeSmile/dev-pipeline](https://github.com/JoeSmile/dev-pipeline)。L0 已冻结。Windows 是首选本地开发环境。配置根目录是必填的绝对路径，必须已经存在；缺失或无效时会立刻失败，不会回退到当前目录，也不会把它当成“可能已有”而继续。步骤见 `docs/dev-setup.md`。
 
-本地 Temporal 默认地址为 `localhost:7233`。单元测试与 Workflow 测试使用 `temporalio.testing.WorkflowEnvironment`，不需要已启动的 Temporal 服务。也可以在 Docker 中跑同一套检查，步骤见 `docs/dev-setup.md`。
+本仓库 Worker 默认连接已运行的官方 Temporal：`127.0.0.1:7233`（容器 `agent-platform-temporal-1`）。若该端口没有服务，到 `D:\projects\kpl agents\agent-platform` 运行 `.\scripts\agent_platform_start.ps1`，不要在本仓库再起一份 Temporal，也不要把 `test-docker.ps1 -WithTemporal` 或 `docker compose --profile temporal` 当作默认启动方式。本期不要求对接 `agent-platform` 的 worker / app / init。
+
+宿主机上的 `python` 经常只是 Windows 商店占位程序，不能用来跑测试。状态机桩测试请用 Docker（务必 `--build`）：
 
 ```powershell
-python -m pytest
-ruff check src tests
-mypy
-```
-
-```powershell
+docker compose run --build --rm test
 .\scripts\test-docker.ps1
-.\scripts\test-docker.ps1 -WithTemporal
 ```
+
+现场 History 测试同样打在官方 Temporal 上（容器内使用 `TEMPORAL_TARGET=host.docker.internal:7233`）：
+
+```powershell
+.\scripts\test-docker.ps1 -LiveHistory
+```
+
+只有已经用官方 Python 3.12 建好 `.venv` 时，才可以在宿主机跑 `python -m pytest`、`ruff check src tests` 和 `mypy`。启动 Worker：`.\scripts\start-worker.ps1 -ConfigRoot D:\pipeline-config`。

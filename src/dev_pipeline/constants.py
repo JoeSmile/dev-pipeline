@@ -3,7 +3,10 @@
 from datetime import timedelta
 from typing import Literal
 
-DEFAULT_TEMPORAL_TARGET = "localhost:7233"
+# Official already-running agent-platform Temporal on the Windows dev host.
+# Do not start a second server on this port from this repository.
+DEFAULT_TEMPORAL_TARGET = "127.0.0.1:7233"
+OFFICIAL_TEMPORAL_CONTAINER = "agent-platform-temporal-1"
 DEFAULT_TASK_QUEUE = "dev-pipeline"
 TEST_PUBLISH_TARGET: Literal["test"] = "test"
 ALLOWED_PUBLISH_TARGETS = frozenset({TEST_PUBLISH_TARGET})

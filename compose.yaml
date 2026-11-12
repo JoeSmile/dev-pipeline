@@ -6,6 +6,9 @@ services:
     working_dir: /app
     command: ["bash", "scripts/test-in-container.sh"]
 
+  # Do not use this profile as the default local Temporal while the official
+  # agent-platform server already occupies 127.0.0.1:7233. Live History tests
+  # must set TEMPORAL_TARGET=host.docker.internal:7233 against that server.
   temporal:
     image: temporalio/temporal:1.5.1
     profiles: ["temporal"]

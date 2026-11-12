@@ -94,6 +94,6 @@ stateDiagram-v2
 
 ## 配置根目录
 
-启动 Worker 必须显式传入已存在的绝对路径 `--config-root`。缺失或无效必须可见地失败，见 `docs/dev-setup.md`。Workflow 模块本身不做文件系统访问；校验发生在 Worker 入口与 `validate_config_root` Activity。
+启动 Worker 必须显式传入已存在的绝对路径 `--config-root`。缺失或无效必须可见地失败，见 `docs/dev-setup.md`。Workflow 模块本身不做文件系统访问；校验发生在 Worker 入口与 `validate_config_root` Activity。Windows 是第一开发环境：本仓库 Worker 默认连接已运行的官方 Temporal `127.0.0.1:7233`（容器 `agent-platform-temporal-1`），不要在本仓库再起一份临时 Temporal。
 
 配置根目录必须包含 `budget.toml`（样例见 `docs/examples/budget.toml`）。计量单位与限额可配置；数字在签批前标为待证，缺失或非法时以中文错误失败，不使用隐藏默认限额。父执行在 bootstrap 时通过 `load_budget_config` Activity 装入账本。互辩 / 检索 / 多模型桩必须经父执行闸门 `start_costly_path` 才能启动；超限即停并记 `Bad`，无新证据则只停该路径。超限不取消同 Story 其他 Ticket。
