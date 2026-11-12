@@ -8,6 +8,7 @@ from typing import Literal
 
 from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
+from dev_pipeline.review import DualReviewRecord
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 
 ReviewDecision = Literal["approve", "rework", "reject"]
@@ -364,6 +365,7 @@ class TicketInput:
     parent_workflow_id: str
     depends_on: list[str] = field(default_factory=list)
     sandbox_write: SandboxWriteSpec | None = None
+    review_write: SandboxWriteSpec | None = None
 
 
 @dataclass
@@ -387,7 +389,7 @@ class ImplementResult:
 
 @dataclass
 class ReviewFindings:
-    """Review stub output. Blocking findings or paradigm drift must HumanGate."""
+    """Legacy review list shape. Dual-review snapshots use DualReviewRecord."""
 
     blocking: list[str] = field(default_factory=list)
     suggestions: list[str] = field(default_factory=list)
@@ -545,6 +547,7 @@ class TicketStateUpdate:
     detail: str = ""
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
+    review: DualReviewRecord | None = None
 
 
 @dataclass
@@ -582,6 +585,7 @@ class TicketSnapshot:
     detail: str = ""
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
+    review: DualReviewRecord | None = None
 
 
 @dataclass
@@ -646,6 +650,7 @@ class TicketResult:
     detail: str = ""
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
+    review: DualReviewRecord | None = None
 
 
 def ticket_workflow_id(ticket_id: str, execution_id: str) -> str:

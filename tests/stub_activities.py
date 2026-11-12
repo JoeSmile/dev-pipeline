@@ -38,6 +38,7 @@ from dev_pipeline.models import (
     VerifyResult,
     WorkspaceClaim,
 )
+from dev_pipeline.review import ReviewWorkerReport, ReviewWorkInput, worker_report_from_legacy
 from dev_pipeline.ticket_list import (
     JiraTicketPersistInput,
     JiraTicketPersistResult,
@@ -69,6 +70,9 @@ class StubController:
     verify_gate: dict[str, asyncio.Event] = field(default_factory=dict)
     implement_errors: set[str] = field(default_factory=set)
     review_findings: dict[str, ReviewFindings] = field(default_factory=dict)
+    review_findings_by_worker: dict[str, dict[str, ReviewFindings]] = field(
+        default_factory=dict
+    )
     verify_passed: dict[str, bool] = field(default_factory=dict)
     spike_red_line: bool = False
     spike_has_protection: bool = False
@@ -207,10 +211,23 @@ class StubController:
             )
 
         @activity.defn(name="review_ticket")
-        async def review_ticket(payload: TicketWorkInput) -> ReviewFindings:
+        async def review_ticket(payload: ReviewWorkInput) -> ReviewWorkerReport:
             controller.reviewed.append(payload.ticket_id)
             await _await_gate(controller.gate("review", payload.ticket_id))
-            return controller.review_findings.get(payload.ticket_id, ReviewFindings(info=["ok"]))
+            per_worker = controller.review_findings_by_worker.get(payload.ticket_id, {})
+            if payload.worker_id in per_worker:
+                findings = per_worker[payload.worker_id]
+            else:
+                findings = controller.review_findings.get(
+                    payload.ticket_id, ReviewFindings(info=["ok"])
+                )
+            return worker_report_from_legacy(
+                payload.worker_id,
+                blocking=list(findings.blocking),
+                suggestions=list(findings.suggestions),
+                info=list(findings.info),
+                paradigm_drift=findings.paradigm_drift,
+            )
 
         @activity.defn(name="verify_ticket")
         async def verify_ticket(payload: TicketWorkInput) -> VerifyResult:

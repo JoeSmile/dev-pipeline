@@ -20,7 +20,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 父 Workflow `DevPipelineWorkflow` 只管阶段、门禁、Jira 同步、预算与幂等。一条父执行对应一张 Story。写码、RAG、双 Review、验证是 Activity 或 Child，不把 agent loop 写进 Workflow。每张实现 Ticket 由独立、可幂等的 Child（`TicketWorkflow`，幂等键 `ticket_id + execution_id`）执行。
 
-Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。按 Ticket 在授权 worktree 内交付可审查的本地分支、diff、单测证据和回滚说明，齐了才进入 Reviewing；缺项不得进入 Reviewing。默认不自动 push / 合并，未授权时不开远程 PR。Review Worker 默认只读 diff，本阶段仍为桩，阻断项或范式漂移必须经 HumanGate。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
+Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。按 Ticket 在授权 worktree 内交付可审查的本地分支、diff、单测证据和回滚说明，齐了才进入 Reviewing；缺项不得进入 Reviewing。默认不自动 push / 合并，未授权时不开远程 PR。进入 Reviewing 后，两个 Review Worker 并行只读审查 diff、L0 与本 Story 局部约束，结论分为阻断 / 建议 / 信息并引用规则条文；无新证据就停，不追加审查轮次。任一阻断或范式漂移、以及两条都阻断且理由冲突时，进入 HumanGate，由人裁，Workflow 不做自动仲裁。仅建议或信息时可直达 Verifying。单文件超过 2000 行必须视为阻断，不得用建议项放行。Review Worker 写入工作区必须被拒，工作区保持不变。一期 Cursor CLI 审查命令约定见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留 `agent -p --mode=ask`，不调用现场 CLI。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
 
 多 Ticket 按依赖拓扑执行：无依赖可并行；有依赖的 Ticket 不得提前开工（Child 直接启动且依赖未过线时停在 `Pending`）。单张失败不自动取消同 Story 其他未受影响的 Ticket，但 Story 不能进入 `TestDeploying` 或 `Retro`，直到失败被处理（重试、人工 `drop_ticket`，或 `abort`）。
 
@@ -38,7 +38,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 互辩、检索（RAG）与多模型调用的预算闸门挂在父 Workflow。计量单位为可配置的 `tokens` / `calls` / `cost`（至少启用一个），限额写在配置根目录的 `budget.toml`。缺失或非法配置会以中文错误可见地失败，不会使用隐藏默认限额继续执行。样例见 `docs/examples/budget.toml`；其中的数字均为**待证**占位，须经负责人签批后才视为正式限额。
 
-耗费用路径通过父执行上的 Update `start_costly_path` 启动对应桩 Activity（`run_debate` / `run_rag` / `run_model_call`）。任一已启用单位用尽时立即停止这些路径，快照记录 `Bad` 与超限原因，不再启动后续外部模型或检索，也不会静默继续计费。超限不自动取消同 Story 其他未受影响的 Ticket。某条路径返回「无新证据」时只停止该路径，不再继续消耗预算。
+耗费用路径通过父执行上的 Update `start_costly_path` 启动对应桩 Activity（`run_debate` / `run_rag` / `run_model_call`）。任一已启用单位用尽时立即停止这些路径，快照记录 `Bad` 与超限原因，不再启动后续外部模型或检索，也不会静默继续计费。超限不自动取消同 Story 其他未受影响的 Ticket。某条路径返回「无新证据」时只停止该路径，不再继续消耗预算。双 Review 同样只跑一轮并行审查，停止原因复用该「无新证据」表述，不另建第二套预算账本；耗费用的互辩 / RAG / 多模型仍走既有 `start_costly_path` 闸门。
 
 已用、限额、剩余、已停止路径和 `last_breach` 挂在现有父执行查询快照的 `budget` 字段上，不另开第二套 Query。真实 RAG / 多模型调度细节不在本票范围。
 

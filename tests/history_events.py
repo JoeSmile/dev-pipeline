@@ -68,3 +68,27 @@ def child_id_reuse_policies(history: WorkflowHistory) -> list[int]:
         attrs = event.start_child_workflow_execution_initiated_event_attributes
         policies.append(int(attrs.workflow_id_reuse_policy))
     return policies
+
+
+def scheduled_before_any_complete(history: WorkflowHistory, activity_name: str) -> int:
+    """Return how many times *activity_name* was scheduled before any of them completed."""
+
+    scheduled_ids: dict[int, str] = {}
+    pending = 0
+    max_pending = 0
+    for event in history.events:
+        if event.event_type == EventType.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
+            name = event.activity_task_scheduled_event_attributes.activity_type.name
+            scheduled_ids[event.event_id] = name
+            if name == activity_name:
+                pending += 1
+                if pending > max_pending:
+                    max_pending = pending
+            continue
+        if event.event_type == EventType.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
+            scheduled_id = event.activity_task_completed_event_attributes.scheduled_event_id
+            name = scheduled_ids.get(scheduled_id, "")
+            if name == activity_name and pending > 0:
+                pending -= 1
+    return max_pending
+

@@ -157,6 +157,17 @@ def produce_implement_result(
         )
 
 
+def collect_reviewable_diff(worktree: str) -> str:
+    """Return the reviewable local diff inside an authorized worktree."""
+
+    if not worktree.strip():
+        return ""
+    try:
+        return _collect_diff(worktree)
+    except SandboxViolation:
+        return ""
+
+
 def _has_deliverable_files(worktree: str) -> bool:
     root = Path(worktree)
     return all((root / path).is_file() for path in (IMPL_PATH, TEST_PATH, ROLLBACK_PATH))

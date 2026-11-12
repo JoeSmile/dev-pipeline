@@ -20,12 +20,19 @@ from dev_pipeline.models import (
     VerifyResult,
     is_complete_deliverables,
 )
+from dev_pipeline.review import (
+    REVIEW_WORKER_IDS,
+    DualReviewRecord,
+    ReviewWorkInput,
+    aggregate_dual_review,
+)
 from dev_pipeline.stages import TicketStage
 from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
 
 with workflow.unsafe.imports_passed_through():
+    from dev_pipeline.activities.review import review_ticket
     from dev_pipeline.activities.sandbox import apply_sandbox_write
-    from dev_pipeline.activities.stubs import implement_ticket, review_ticket, verify_ticket
+    from dev_pipeline.activities.stubs import implement_ticket, verify_ticket
     from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
@@ -55,6 +62,7 @@ class TicketRuntime:
         self.detail = ""
         self.sandbox: SandboxRecord | None = None
         self.deliverables: TicketDeliverables | None = None
+        self.review: DualReviewRecord | None = None
 
     def stopped(self) -> bool:
         """Return True when the child should leave the work loop."""
@@ -92,6 +100,7 @@ class TicketRuntime:
             detail=self.detail,
             sandbox=self.sandbox,
             deliverables=self.deliverables,
+            review=self.review,
         )
 
 
@@ -110,6 +119,7 @@ async def notify_parent(runtime: TicketRuntime, *, unhandled_failure: bool = Fal
             detail=runtime.detail,
             sandbox=runtime.sandbox,
             deliverables=runtime.deliverables,
+            review=runtime.review,
         ),
     )
 
@@ -203,17 +213,45 @@ async def run_implement(runtime: TicketRuntime) -> None:
 
 
 async def run_review(runtime: TicketRuntime) -> None:
-    """Run the review stub and enter HumanGate or Verifying."""
-    findings = await workflow.execute_activity(
-        review_ticket,
-        runtime.work_input(),
-        start_to_close_timeout=ACTIVITY_TIMEOUT,
-        heartbeat_timeout=HEARTBEAT_TIMEOUT,
-        retry_policy=NO_RETRY,
-    )
+    """Run two Review Workers in parallel, then enter HumanGate or Verifying.
+
+    Exactly one parallel round is started. The path then stops, reusing the
+    existing no-new-evidence wording; a second review loop is not started.
+    Conflicting 阻断 findings still enter HumanGate; the workflow does not
+    auto-arbitrate.
+    """
+    work = runtime.work_input()
+    write_path = ""
+    write_content = ""
+    if runtime.input is not None and runtime.input.review_write is not None:
+        write_path = runtime.input.review_write.path
+        write_content = runtime.input.review_write.content
+    handles = [
+        workflow.start_activity(
+            review_ticket,
+            ReviewWorkInput(
+                ticket_id=work.ticket_id,
+                execution_id=work.execution_id,
+                story_id=work.story_id,
+                config_root=work.config_root,
+                worker_id=worker_id,
+                write_path=write_path,
+                write_content=write_content,
+            ),
+            start_to_close_timeout=ACTIVITY_TIMEOUT,
+            heartbeat_timeout=HEARTBEAT_TIMEOUT,
+            retry_policy=NO_RETRY,
+        )
+        for worker_id in REVIEW_WORKER_IDS
+    ]
+    reports = [await handles[0], await handles[1]]
     if runtime.stopped():
         return
-    if findings.requires_human_gate():
+    record = aggregate_dual_review(reports)
+    runtime.review = record
+    if record.write_reason:
+        runtime.detail = record.write_reason
+    if record.requires_human_gate:
         runtime.move(TicketStage.HUMAN_GATE, "blocking_or_paradigm_drift")
         await notify_parent(runtime)
         return

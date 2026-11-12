@@ -32,6 +32,9 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.workspace_auth",
         "dev_pipeline.deliverables",
         "dev_pipeline.coding_cli_adapter",
+        "dev_pipeline.review_backend",
+        "dev_pipeline.review_cli",
+        "dev_pipeline.review_cli_adapter",
         "dev_pipeline.worktree_recycle",
     }
 )

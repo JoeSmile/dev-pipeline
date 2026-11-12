@@ -5,13 +5,13 @@ from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
 from dev_pipeline.activities.jira_tickets import persist_jira_tickets
 from dev_pipeline.activities.reopen import ReopenStarter
+from dev_pipeline.activities.review import review_ticket
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.activities.spike import load_spike_config, run_spike
 from dev_pipeline.activities.story_draft import normalize_story_draft
 from dev_pipeline.activities.stubs import (
     implement_ticket,
     publish_to_test_env,
-    review_ticket,
     verify_ticket,
     write_retro_record,
 )

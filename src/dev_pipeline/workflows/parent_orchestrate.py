@@ -280,8 +280,13 @@ class ParentOrchestrationMixin:
                 return
             if started_any:
                 continue
-            state.ticket_event = False
-            await workflow.wait_condition(lambda: state.ticket_event or state.abort_requested)
+            # Do not clear ticket_event before waiting: a child may have
+            # notified during _start_eligible, and dropping that wake-up
+            # would leave dependents parked in Pending.
+            if not state.ticket_event and not state.abort_requested:
+                await workflow.wait_condition(
+                    lambda: state.ticket_event or state.abort_requested
+                )
             state.ticket_event = False
 
     async def _start_eligible(self) -> bool:

@@ -462,3 +462,36 @@ def apply_guarded_write(
         )
         return SandboxWriteResult(allowed=False, record=record, written_path="")
     return decision
+
+REVIEW_WRITE_DENIED = "Review Worker 只读，拒绝写入工作区"
+
+
+def apply_review_write(
+    authorized_worktree: str,
+    requested_path: str,
+    content: str,
+    *,
+    style: PathStyle | None = None,
+) -> SandboxWriteResult:
+    """Reject a Review Worker write, even when the path is inside the tree.
+
+    The path guard still runs so an out-of-bounds attempt keeps its sandbox
+    reason. In-bounds paths are rejected as read-only and the file is not
+    created. ``content`` is accepted only so callers share the write signature.
+    """
+
+    del content
+    decision = evaluate_write(
+        authorized_worktree,
+        requested_path,
+        style=style,
+        inspect_filesystem=True,
+    )
+    if not decision.allowed:
+        return decision
+    record = build_sandbox_record(
+        authorized_worktree=authorized_worktree,
+        requested_path=requested_path,
+        reason=REVIEW_WRITE_DENIED,
+    )
+    return SandboxWriteResult(allowed=False, record=record, written_path="")
