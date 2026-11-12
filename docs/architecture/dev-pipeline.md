@@ -73,7 +73,7 @@ stateDiagram-v2
 | 阶段 | 进入下一阶段的硬条件 |
 |---|---|
 | Intake | 规范化 Story 草稿（`snapshot.story_draft`），缺项标待证；不锁范围 |
-| ScopeLocked | 要解决 / 不做什么已锁 |
+| ScopeLocked | 要解决 / 不做什么已锁，并写入执行记录（锁定人、时间）；`reopen` 只读继承 |
 | SchemeDecided | 取舍记录 + 假设分级（红线 / 局部 / 候选） |
 | Spike | 高危假设有可证伪结果；失败则 Blocked 或补防护 |
 | TicketsReady | 每张票有目标、验收、依赖、I/O 契约 |
@@ -88,7 +88,7 @@ stateDiagram-v2
 
 `lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
-进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态，以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。完整心跳尚未实现。
+进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。完整心跳尚未实现。
 
 ## 配置根目录
 

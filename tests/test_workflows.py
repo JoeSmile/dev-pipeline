@@ -307,7 +307,10 @@ async def test_spike_reject_blocks(
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
-        await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in"))
+        await handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
+        )
         await wait_snapshot(handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED)
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,

@@ -75,10 +75,13 @@ async def test_wrong_stage_signals_are_rejected_and_stage_stays(
         assert snap.stage is ParentStage.INTAKE
         await handle.signal(
             DevPipelineWorkflow.lock_scope,
-            ScopeLock(in_scope="in", out_of_scope="out"),
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
         )
         await wait_snapshot(handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED)
-        await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="again"))
+        await handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="again", out_of_scope="out", locked_by="tester"),
+        )
         snap = await wait_snapshot(
             handle,
             lambda item: item.last_rejection is not None
@@ -103,7 +106,10 @@ async def test_illegal_payload_is_rejected_and_workflow_keeps_running(
         )
         assert snap.stage is ParentStage.INTAKE
         assert "必填" in (snap.last_rejection.reason if snap.last_rejection else "")
-        await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in"))
+        await handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
+        )
         snap = await wait_snapshot(handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED)
         assert snap.stage is ParentStage.SCOPE_LOCKED
     finally:
@@ -224,7 +230,10 @@ async def test_reopen_starts_new_independent_parent_execution(
         assert new_snap.story_id == payload.story_id
         assert new_snap.execution_id == new_id
         assert new_snap.stage is ParentStage.INTAKE
-        await new_handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="reopened"))
+        await new_handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="reopened", out_of_scope="out", locked_by="tester"),
+        )
         new_snap = await wait_snapshot(
             new_handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED
         )

@@ -36,7 +36,11 @@ class SignalSchema:
 
 
 SCHEMAS: dict[str, SignalSchema] = {
-    "lock_scope": SignalSchema(ScopeLock, ("in_scope",), nonempty=("in_scope",)),
+    "lock_scope": SignalSchema(
+        ScopeLock,
+        ("in_scope", "out_of_scope", "locked_by"),
+        nonempty=("in_scope", "out_of_scope", "locked_by"),
+    ),
     "decide_scheme": SignalSchema(
         SchemeDecision,
         ("has_high_risk_assumption",),
@@ -163,7 +167,8 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
     if signal == "lock_scope":
         return ScopeLock(
             in_scope=str(mapping["in_scope"]).strip(),
-            out_of_scope=str(mapping.get("out_of_scope") or ""),
+            out_of_scope=str(mapping["out_of_scope"]).strip(),
+            locked_by=str(mapping["locked_by"]).strip(),
         )
     if signal == "decide_scheme":
         return SchemeDecision(

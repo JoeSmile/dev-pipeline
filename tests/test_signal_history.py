@@ -48,7 +48,10 @@ async def test_history_contains_human_signals_and_reopen_start(
         )
         await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
         await handle.signal(DevPipelineWorkflow.reopen, ReopenRequest(execution_id="too-early"))
-        await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in"))
+        await handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
+        )
         await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="history-abort"))
         await wait_terminal(handle)
         new_id = f"{payload.execution_id}-from-history"

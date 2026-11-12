@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -204,6 +205,20 @@ async def test_same_key_completed_returns_existing_result_and_one_claim(
         await worker.__aexit__(None, None, None)
 
 
+
+async def _wait_not_running(client: object, workflow_id: str, *, timeout: float = 15.0) -> None:
+    """Wait until a workflow has left RUNNING (e.g. cancel of a held activity)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    last = None
+    while loop.time() < deadline:
+        last = await client.get_workflow_handle(workflow_id).describe()  # type: ignore[attr-defined]
+        if last.status.name not in {"RUNNING"}:
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"timeout waiting for {workflow_id} to leave RUNNING, last={last}")
+
+
 async def test_reopen_uses_new_key_and_leaves_old_claim_untouched(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
@@ -226,14 +241,14 @@ async def test_reopen_uses_new_key_and_leaves_old_claim_untouched(
         assert controller.workspace.get("A", payload.execution_id) == old_claim
         assert controller.workspace.created_count("A", payload.execution_id) == 1
 
-        old_child = await workflow_env.client.get_workflow_handle(old_child_id).describe()
-        assert old_child.status.name not in {"RUNNING"}
+        await _wait_not_running(workflow_env.client, old_child_id)
 
         new_handle = workflow_env.client.get_workflow_handle(
             story_workflow_id(payload.story_id, new_id)
         )
         await new_handle.signal(
-            DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in", out_of_scope="out")
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
         )
         await wait_snapshot(new_handle, lambda item: item.stage is not ParentStage.INTAKE)
         await new_handle.signal(
@@ -256,8 +271,7 @@ async def test_reopen_uses_new_key_and_leaves_old_claim_untouched(
         assert new_claim.branch_name != old_claim.branch_name
         assert controller.workspace.get("A", payload.execution_id) == old_claim
         # Old child is still not running and was not resumed by the new parent.
-        old_after = await workflow_env.client.get_workflow_handle(old_child_id).describe()
-        assert old_after.status.name not in {"RUNNING"}
+        await _wait_not_running(workflow_env.client, old_child_id)
         await new_handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="stop-reopened"))
         await wait_terminal(new_handle)
     finally:

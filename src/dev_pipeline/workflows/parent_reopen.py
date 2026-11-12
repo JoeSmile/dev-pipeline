@@ -52,6 +52,7 @@ class ParentReopenMixin:
                 tickets=list(payload.tickets),
                 summary=payload.summary,
                 intake=payload.intake,
+                inherited_scope=state.scope,
             ),
             start_to_close_timeout=REOPEN_START_TIMEOUT,
             retry_policy=REOPEN_START_RETRY,

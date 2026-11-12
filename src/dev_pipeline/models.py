@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Literal
 
 from dev_pipeline.budget import BudgetSnapshot
@@ -37,7 +38,8 @@ class StoryDraft:
     """Normalized Story draft produced during Intake.
 
     Missing fields are marked ``待证``. This draft is the input to
-    ``lock_scope`` (DP-16); this ticket records it and does not lock scope.
+    ``lock_scope``; locking itself is done by the human signal, not by
+    draft normalization.
     """
 
     to_solve: str = PENDING_FIELD
@@ -70,6 +72,37 @@ class TicketSpec:
 
 
 @dataclass
+class ScopeLock:
+    """lock_scope payload and the locked-scope execution record.
+
+    Human signals must supply ``in_scope``, ``out_of_scope``, and
+    ``locked_by``. The workflow stamps ``locked_at`` from
+    ``workflow.now()`` and ignores any client-supplied timestamp.
+    """
+
+    in_scope: str
+    out_of_scope: str = ""
+    locked_by: str = ""
+    locked_at: str = ""
+
+
+def format_scope_lock_time(moment: datetime) -> str:
+    """Format a lock timestamp as UTC ISO-8601 with a ``Z`` suffix."""
+
+    aware = moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+    return aware.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def is_complete_scope_lock(scope: ScopeLock) -> bool:
+    """Return True when 要解决, 不做什么, 锁定人, and 时间 are all non-empty."""
+
+    return all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (scope.in_scope, scope.out_of_scope, scope.locked_by, scope.locked_at)
+    )
+
+
+@dataclass
 class StoryInput:
     """Start payload for one parent DevPipelineWorkflow execution."""
 
@@ -79,14 +112,7 @@ class StoryInput:
     tickets: list[TicketSpec] = field(default_factory=list)
     summary: str = ""
     intake: IntakeRecord | None = None
-
-
-@dataclass
-class ScopeLock:
-    """Payload for the lock_scope human signal."""
-
-    in_scope: str
-    out_of_scope: str = ""
+    inherited_scope: ScopeLock | None = None
 
 
 @dataclass
@@ -260,6 +286,7 @@ class ReopenStartInput:
     tickets: list[TicketSpec] = field(default_factory=list)
     summary: str = ""
     intake: IntakeRecord | None = None
+    inherited_scope: ScopeLock | None = None
 
 
 @dataclass
@@ -340,6 +367,7 @@ class PipelineSnapshot:
     intake: IntakeRecord | None = None
     jira_mirror: JiraMirrorSnapshot | None = None
     story_draft: StoryDraft | None = None
+    scope: ScopeLock | None = None
 
 
 @dataclass

@@ -84,7 +84,10 @@ async def test_live_temporal_history_records_signals_and_reopen(
         )
         await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
         await handle.signal(DevPipelineWorkflow.reopen, ReopenRequest(execution_id="too-early"))
-        await handle.signal(DevPipelineWorkflow.lock_scope, ScopeLock(in_scope="in"))
+        await handle.signal(
+            DevPipelineWorkflow.lock_scope,
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
+        )
         await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="live-abort"))
         await wait_terminal(handle, timeout=30.0)
         new_id = f"{payload.execution_id}-live"
@@ -100,8 +103,14 @@ async def test_live_temporal_history_records_signals_and_reopen(
         assert missing == [], f"Live History 缺少 Signal: {missing}; 实际={names}"
         assert "start_reopened_workflow" in scheduled_activity_names(history)
         new_handle = live_client.get_workflow_handle(story_workflow_id(payload.story_id, new_id))
-        new_snap = await new_handle.query(DevPipelineWorkflow.snapshot)
+        new_snap = await wait_snapshot(
+            new_handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED, timeout=30.0
+        )
         assert new_snap.execution_id == new_id
-        assert new_snap.stage is ParentStage.INTAKE
+        assert new_snap.scope is not None
+        assert new_snap.scope.in_scope == "in"
+        assert new_snap.scope.out_of_scope == "out"
+        assert new_snap.scope.locked_by == "tester"
+        assert new_snap.scope.locked_at
     finally:
         await worker.__aexit__(None, None, None)

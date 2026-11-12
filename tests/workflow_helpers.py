@@ -44,6 +44,15 @@ async def wait_snapshot(
     raise AssertionError(f"timeout waiting for snapshot, last={last}")
 
 
+def scope_lock(
+    in_scope: str = "in",
+    out_of_scope: str = "out",
+    locked_by: str = "tester",
+) -> ScopeLock:
+    """Build a valid lock_scope payload for workflow tests."""
+    return ScopeLock(in_scope=in_scope, out_of_scope=out_of_scope, locked_by=locked_by)
+
+
 def story(
     config_root: Path,
     tickets: Sequence[TicketSpec],
@@ -93,7 +102,7 @@ async def advance_to_implementing(
 ) -> PipelineSnapshot:
     await handle.signal(
         DevPipelineWorkflow.lock_scope,
-        ScopeLock(in_scope="in", out_of_scope="out"),
+        scope_lock(),
     )
     await wait_snapshot(
         handle,

@@ -45,6 +45,7 @@ class ReopenStarter:
             tickets=list(payload.tickets),
             summary=payload.summary,
             intake=payload.intake,
+            inherited_scope=payload.inherited_scope,
         )
         try:
             await self._client.start_workflow(

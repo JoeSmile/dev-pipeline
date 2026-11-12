@@ -16,11 +16,13 @@ from dev_pipeline.models import (
     PublishRequest,
     PublishResult,
     RetroInput,
+    ScopeLock,
     SpikeInput,
     SpikeResult,
     StoryDraftInput,
     StoryInput,
     TicketInput,
+    is_complete_scope_lock,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus
 from dev_pipeline.topology import eligible_ticket_ids
@@ -89,12 +91,33 @@ class ParentOrchestrationMixin:
             start_to_close_timeout=ACTIVITY_TIMEOUT,
             retry_policy=NO_RETRY,
         )
+        inherited = self._inherited_scope()
+        if inherited is not None:
+            state.scope = inherited
+            await self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
+            state.waiting = "decide_scheme"
+            return
         state.waiting = "lock_scope"
         await workflow.wait_condition(lambda: state.scope is not None or state.abort_requested)
         if state.abort_requested:
             return
         await self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
         state.waiting = "decide_scheme"
+
+    def _inherited_scope(self) -> ScopeLock | None:
+        """Return a complete inherited lock, or None when reopen has nothing to copy."""
+        payload = self._state.input
+        if payload is None or payload.inherited_scope is None:
+            return None
+        inherited = payload.inherited_scope
+        if not is_complete_scope_lock(inherited):
+            return None
+        return ScopeLock(
+            in_scope=inherited.in_scope,
+            out_of_scope=inherited.out_of_scope,
+            locked_by=inherited.locked_by,
+            locked_at=inherited.locked_at,
+        )
 
     async def _wait_for_scheme(self) -> None:
         state = self._state

@@ -89,7 +89,7 @@ async def test_live_stage_change_schedules_mirror_activity_and_history_stays_tru
         )
         await handle.signal(
             DevPipelineWorkflow.lock_scope,
-            ScopeLock(in_scope="in", out_of_scope="out"),
+            ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
         )
         snap = await wait_snapshot(
             handle,

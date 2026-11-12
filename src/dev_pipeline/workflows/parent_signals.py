@@ -14,6 +14,7 @@ from dev_pipeline.models import (
     ReviewOverride,
     SchemeDecision,
     ScopeLock,
+    format_scope_lock_time,
 )
 from dev_pipeline.signal_schemas import parse_human_signal
 from dev_pipeline.stages import ParentStage, TicketStage
@@ -48,7 +49,12 @@ class ParentSignalMixin:
                 "当前阶段不能锁范围",
             )
             return
-        self._state.scope = parsed
+        self._state.scope = ScopeLock(
+            in_scope=parsed.in_scope,
+            out_of_scope=parsed.out_of_scope,
+            locked_by=parsed.locked_by,
+            locked_at=format_scope_lock_time(workflow.now()),
+        )
 
     @workflow.signal
     def decide_scheme(self, payload: Any) -> None:

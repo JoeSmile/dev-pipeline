@@ -62,7 +62,7 @@ async def _lock_scope(
 ) -> PipelineSnapshot:
     await handle.signal(
         DevPipelineWorkflow.lock_scope,
-        ScopeLock(in_scope="in", out_of_scope="out"),
+        ScopeLock(in_scope="in", out_of_scope="out", locked_by="tester"),
     )
     return await wait_snapshot(handle, lambda snap: snap.stage is ParentStage.SCOPE_LOCKED)
 
