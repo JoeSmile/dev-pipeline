@@ -1,4 +1,4 @@
-"""Command-line entry for starting and querying one DevPipelineWorkflow."""
+"""Command-line entry for starting, signalling, and querying one DevPipelineWorkflow."""
 
 from __future__ import annotations
 
@@ -14,12 +14,19 @@ from typing import Any, NoReturn, Protocol
 import structlog
 
 from dev_pipeline.budget_config import load_budget_config_from_path
+from dev_pipeline.cli_signal import (
+    SignalArgs,
+    add_signal_parser,
+    run_signal,
+    signal_args_from_parse,
+)
 from dev_pipeline.cli_status import (
     StatusArgs,
     add_status_parser,
     run_status,
     status_args_from_parse,
 )
+from dev_pipeline.cli_status_follow import run_status_follow
 from dev_pipeline.config_root import validate_config_root_path
 from dev_pipeline.constants import (
     CLIENT_CONNECT_TIMEOUT,
@@ -29,8 +36,10 @@ from dev_pipeline.constants import (
 from dev_pipeline.errors import (
     BudgetConfigError,
     ConfigRootError,
+    PipelineSignalError,
     PipelineStartError,
     PipelineStatusError,
+    PipelineUsageError,
 )
 from dev_pipeline.intake import intake_from_cli, story_input_from_intake, validate_jira_key
 from dev_pipeline.models import StoryInput, story_workflow_id
@@ -44,7 +53,7 @@ _MISSING_JIRA_KEY = (
     "Jira key 是必填参数，必须是 DP 项目的 issue key，例如 DP-13。请传入 --jira-key。"
 )
 _NEED_COMMAND = (
-    "请使用子命令 start 或 status，例如: dev-pipeline start --jira-key DP-13 "
+    "请使用子命令 start、signal 或 status，例如: dev-pipeline start --jira-key DP-13 "
     "--config-root <绝对路径>"
 )
 _EMPTY_EXECUTION_ID = "execution_id 不能为空。省略该参数时会自动生成，传入时必须是非空值。"
@@ -100,7 +109,7 @@ class StartResult:
     jira_key: str
 
 
-def parse_cli_args(argv: list[str] | None = None) -> StartArgs | StatusArgs:
+def parse_cli_args(argv: list[str] | None = None) -> StartArgs | StatusArgs | SignalArgs:
     """Parse CLI arguments. ``start``, ``--jira-key`` and ``--config-root`` are required.
 
     Args:
@@ -112,7 +121,7 @@ def parse_cli_args(argv: list[str] | None = None) -> StartArgs | StatusArgs:
 
     parser = argparse.ArgumentParser(
         prog="dev-pipeline",
-        description="用 CLI 显式启动一条 DevPipelineWorkflow，并进入 Intake。",
+        description="用 CLI 启动、发 Signal、查询一条 DevPipelineWorkflow。",
     )
     sub = parser.add_subparsers(dest="command")
     start = sub.add_parser(
@@ -144,10 +153,13 @@ def parse_cli_args(argv: list[str] | None = None) -> StartArgs | StatusArgs:
         default=DEFAULT_TASK_QUEUE,
         help=f"Task queue 名称（默认 {DEFAULT_TASK_QUEUE}）",
     )
-    add_status_parser(sub)
+    status_parser = add_status_parser(sub)
+    signal_parser = add_signal_parser(sub)
     parsed = parser.parse_args(argv)
     if parsed.command == "status":
-        return status_args_from_parse(parsed)
+        return status_args_from_parse(status_parser, parsed)
+    if parsed.command == "signal":
+        return signal_args_from_parse(signal_parser, parsed)
     return _start_args_from_parse(parser, parsed)
 
 
@@ -298,7 +310,7 @@ def _fail(exc: BaseException, code: int) -> NoReturn:
 
 
 def main(argv: list[str] | None = None, *, connect: ConnectFn | None = None) -> None:
-    """Start a pipeline execution, or exit non-zero on a visible failure.
+    """Run start, signal, or status, or exit non-zero on a visible failure.
 
     Args:
         argv: Optional CLI arguments; defaults to ``sys.argv[1:]``.
@@ -308,12 +320,21 @@ def main(argv: list[str] | None = None, *, connect: ConnectFn | None = None) -> 
     try:
         args = parse_cli_args(argv)
         if isinstance(args, StatusArgs):
-            print(asyncio.run(run_status(args, connect=connect)))  # type: ignore[arg-type]
+            if args.follow:
+                asyncio.run(run_status_follow(args, connect=connect))  # type: ignore[arg-type]
+            else:
+                print(asyncio.run(run_status(args, connect=connect)))  # type: ignore[arg-type]
+            return
+        if isinstance(args, SignalArgs):
+            print(asyncio.run(run_signal(args, connect=connect)))  # type: ignore[arg-type]
             return
         result = asyncio.run(run_start(args, connect=connect))
-    except (ConfigRootError, BudgetConfigError) as exc:
+    except KeyboardInterrupt:
+        print("已停止跟随。", file=sys.stderr)
+        raise SystemExit(130) from None
+    except (ConfigRootError, BudgetConfigError, PipelineUsageError) as exc:
         _fail(exc, 2)
-    except (PipelineStartError, PipelineStatusError) as exc:
+    except (PipelineStartError, PipelineStatusError, PipelineSignalError) as exc:
         _fail(exc, 1)
     print(_format_success(result))
 

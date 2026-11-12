@@ -41,6 +41,10 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.worktree_recycle",
         "dev_pipeline.progress_log",
         "dev_pipeline.cli_status",
+        "dev_pipeline.cli_status_follow",
+        "dev_pipeline.cli_signal",
+        "dev_pipeline.cli_signal_payload",
+        "dev_pipeline.cli_ids",
     }
 )
 FORBIDDEN_CALLS = frozenset(

@@ -42,11 +42,11 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 已用、限额、剩余、已停止路径和 `last_breach` 挂在现有父执行查询快照的 `budget` 字段上，不另开第二套 Query。真实 RAG / 多模型调度细节不在本票范围。
 
-## 用 CLI 启动进入 Intake（DP-13）
+## 操作 CLI：启动、Signal、状态（DP-28）
 
-Jira 只提供 key，不当编排器。用本仓库的 CLI 显式启动一条 `DevPipelineWorkflow`，执行进入 Intake。自动按 Jira 标签开跑是 [DP-39](https://weiperfect007.atlassian.net/browse/DP-39)，本入口不实现监听器。CLI 与后续监听路径共用同一套 Intake 形状（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`）；CLI 填写 `source=cli`。进入 Intake 后会把原始诉求整理成规范化 Story 草稿（至少包含要解决什么、已知约束、缺项列表；缺项标 `待证`，不臆造验收），挂在查询快照的 `story_draft` 上，作为后续 `lock_scope` 的输入。本阶段不锁范围、不开始编码。
+本期无人产品界面。人通过本仓库 CLI 启动、发 Signal、查状态；Temporal UI 只对照 History，不是唯一操作方式。Jira 只提供 key，不当编排器。用 CLI 显式启动一条 `DevPipelineWorkflow`，执行进入 Intake。自动按 Jira 标签开跑是 [DP-39](https://weiperfect007.atlassian.net/browse/DP-39)，本入口不实现监听器。CLI 与后续监听路径共用同一套 Intake 形状（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`）；CLI 填写 `source=cli`。进入 Intake 后会把原始诉求整理成规范化 Story 草稿（至少包含要解决什么、已知约束、缺项列表；缺项标 `待证`，不臆造验收），挂在查询快照的 `story_draft` 上，作为后续 `lock_scope` 的输入。本阶段不锁范围、不开始编码。
 
-可复制的验收命令（先准备好已存在的配置根目录，并启动 Worker，步骤见 `docs/dev-setup.md`）：
+可复制的验收命令（Windows 第一本地环境；先准备好已存在的配置根目录，并启动 Worker，步骤见 `docs/dev-setup.md`）：
 
 ```powershell
 dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
@@ -54,16 +54,44 @@ dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
 
 等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `localhost:7233`）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
 
+锁定范围（人工门禁，无需产品界面）：
+
+```powershell
+dev-pipeline signal lock_scope --config-root D:\pipeline-config --workflow-id story-DP-13-<execution_id> --in-scope "登录校验" --out-of-scope "支付" --locked-by "Joe"
+```
+
+也可用 `--name lock_scope` 代替位置参数，或用 `--jira-key DP-13 --execution-id <execution_id>` 代替 `--workflow-id`。支持的 Signal 为既有人工信号：`lock_scope`、`decide_scheme`、`approve_spike`、`submit_tickets`、`review_override`、`promote_rule`、`authorize_test_deploy`、`abort`、`reopen`、`retry_ticket`、`drop_ticket`。复杂 payload 可用 `--payload` / `--payload-file`（UTF-8 JSON 对象）。例如审查放行：
+
+```powershell
+dev-pipeline signal review_override --config-root D:\pipeline-config --workflow-id story-DP-13-<execution_id> --ticket-id T1 --decision 放行 --decided-by "Joe"
+```
+
+非法 Signal、缺必填字段，或未到阶段时，CLI 呈现拒绝并非零退出，不改变阶段。成功时会打印新的 `stage` / `waiting_signal` / 「正在等候你确认××」。
+
 查询同一条执行（只读，不改变状态）：
 
 ```powershell
 dev-pipeline status --workflow-id story-DP-13-<execution_id> --config-root D:\pipeline-config
 ```
 
-也可使用 `--jira-key DP-13 --execution-id <execution_id>`。配置根目录仍然必填，用于定位该 execution 证据目录下的进度日志，查询本身不会写文件或 Jira。
+也可使用 `--jira-key DP-13 --execution-id <execution_id>`。输出包含当前步骤、最近进度行、最近心跳，以及等候确认「正在等候你确认××」或过期标记「可能无响应」（二者可区分）。配置根目录仍然必填，用于定位该 execution 证据目录下的进度日志，查询本身不会写文件或 Jira。长耗时阶段请加 `--follow` 持续刷新，避免看起来像挂了：
 
+```powershell
+dev-pipeline status --follow --workflow-id story-DP-13-<execution_id> --config-root D:\pipeline-config
+```
 
-配置根目录缺失、非法，或缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。只读查询见 `dev-pipeline status`（[DP-27](https://weiperfect007.atlassian.net/browse/DP-27)）：打印阶段、等候点、Ticket / Child 状态、已耗预算、最近失败原因、Jira 镜像是否滞后，以及当前步骤、最近心跳、过期标记「可能无响应」和有限条步骤提示。连续跟随刷新见 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)，本入口不做跟随循环。
+可选 `--follow-interval`（默认 2 秒，**待证**占位，与心跳间隔占位相同）、`--follow-until waiting|stage-change|expired`（默认 `interrupt`，即 Ctrl+C 或 `--follow-max`）、`--follow-max`。跟随只查询，不改阶段，不超时自动放行门禁。
+
+### 退出码
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 成功：`start` 已进入 Intake；`signal` 已被接受；`status` / `--follow` 查询成功 |
+| 2 | 用法或配置错误：缺必填参数、`--config-root` 缺失或不是已存在的绝对目录、payload 缺字段、未知 Signal、`budget.toml` 非法 |
+| 1 | 运行失败：Temporal 不可达、找不到父执行、启动冲突、Workflow 拒绝了 Signal（阶段不变） |
+| 130 | `status --follow` 被 Ctrl+C 中断 |
+
+配置根目录缺失、非法，或 `start` 缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。Query 字段仍由 [DP-27](https://weiperfect007.atlassian.net/browse/DP-27) 提供；本入口把命令与退出码契约定死，并补上跟随刷新。细则见 [plans/superpowers/DP-28.md](plans/superpowers/DP-28.md)。
 
 ## 把阶段镜像回 Jira（DP-14）
 

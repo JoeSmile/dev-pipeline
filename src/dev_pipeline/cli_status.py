@@ -1,7 +1,7 @@
 """Read-only ``dev-pipeline status``: query the parent snapshot and print it.
 
-Continuous follow / refresh is DP-28 and is not implemented here. This
-command does not change Workflow state, write Jira, or write files.
+Follow / continuous refresh lives in ``cli_status_follow``. This command
+does not change Workflow state, write Jira, or write files.
 """
 
 from __future__ import annotations
@@ -13,12 +13,18 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from dev_pipeline.cli_ids import (
+    _MISSING_CONFIG_ROOT,
+    _NEED_ID,
+    optional_text,
+    resolve_parent_workflow_id,
+)
 from dev_pipeline.constants import CLIENT_CONNECT_TIMEOUT, DEFAULT_TEMPORAL_TARGET
 from dev_pipeline.errors import ConfigRootError, PipelineStatusError
-from dev_pipeline.intake import validate_jira_key
-from dev_pipeline.models import PipelineSnapshot, story_workflow_id
+from dev_pipeline.models import PipelineSnapshot
 from dev_pipeline.progress import (
     DEFAULT_DISPLAY_EXPIRY,
+    DEFAULT_HEARTBEAT_INTERVAL,
     ProgressHeartbeat,
     ProgressSnapshot,
     classify_progress,
@@ -28,14 +34,11 @@ from dev_pipeline.progress import (
 from dev_pipeline.progress_log import load_recorded_progress
 from dev_pipeline.stages import ParentStage
 
-_NEED_ID = (
-    "请传入 --workflow-id，或同时传入 --jira-key 与 --execution-id，以便定位父执行。"
-)
 _CONNECT_FAILED = "无法连接 Temporal（{target}）: {exc}。查询已中止，状态未被改写。"
 _QUERY_FAILED = "查询父执行失败（workflow_id={workflow_id}）: {exc}。状态未被改写。"
-_MISSING_CONFIG_ROOT = (
-    "配置根目录是必填参数，不能省略，也不会回退到当前目录或默认路径。请传入 --config-root。"
-)
+# 待证: follow refresh interval placeholder, aligned with the heartbeat default.
+DEFAULT_FOLLOW_INTERVAL_SECONDS = DEFAULT_HEARTBEAT_INTERVAL.total_seconds()
+FOLLOW_UNTIL_CHOICES = ("interrupt", "waiting", "stage-change", "expired")
 
 
 class WorkflowQuerier(Protocol):
@@ -72,10 +75,16 @@ class StatusArgs:
     workflow_id: str | None
     jira_key: str | None
     execution_id: str | None
+    follow: bool = False
+    follow_interval: float = DEFAULT_FOLLOW_INTERVAL_SECONDS
+    follow_until: str = "interrupt"
+    follow_max: int | None = None
 
 
-def add_status_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the read-only ``status`` subcommand."""
+def add_status_parser(
+    sub: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> argparse.ArgumentParser:
+    """Register the read-only ``status`` subcommand, including follow flags."""
 
     parser = sub.add_parser("status", help="只读查询父执行快照（阶段、等候、预算、心跳）。")
     parser.add_argument(
@@ -95,18 +104,52 @@ def add_status_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         default=DEFAULT_TEMPORAL_TARGET,
         help=f"Temporal 地址（默认 {DEFAULT_TEMPORAL_TARGET}）",
     )
+    parser.add_argument(
+        "--follow",
+        action="store_true",
+        help="持续刷新状态，直到中断或满足 --follow-until（只读，不改状态）",
+    )
+    parser.add_argument(
+        "--follow-interval",
+        type=float,
+        default=DEFAULT_FOLLOW_INTERVAL_SECONDS,
+        help=(
+            "跟随刷新间隔秒数（待证占位，默认 "
+            f"{DEFAULT_FOLLOW_INTERVAL_SECONDS:g}，与心跳间隔占位相同）"
+        ),
+    )
+    parser.add_argument(
+        "--follow-until",
+        choices=FOLLOW_UNTIL_CHOICES,
+        default="interrupt",
+        help="跟随结束条件：interrupt（默认，Ctrl+C 或 --follow-max）、"
+        "waiting、stage-change、expired",
+    )
+    parser.add_argument(
+        "--follow-max",
+        type=int,
+        default=None,
+        help="最多刷新次数；省略则直到中断或 --follow-until",
+    )
+    return parser
 
 
-def status_args_from_parse(args: argparse.Namespace) -> StatusArgs:
+def status_args_from_parse(parser: argparse.ArgumentParser, args: argparse.Namespace) -> StatusArgs:
     """Validate status flags after argparse has parsed the command line."""
 
     if args.config_root is None or not str(args.config_root).strip():
-        raise SystemExit(_MISSING_CONFIG_ROOT)
-    workflow_id = _optional(args.workflow_id)
-    jira_key = _optional(args.jira_key)
-    execution_id = _optional(args.execution_id)
+        parser.error(_MISSING_CONFIG_ROOT)
+    workflow_id = optional_text(args.workflow_id)
+    jira_key = optional_text(args.jira_key)
+    execution_id = optional_text(args.execution_id)
     if workflow_id is None and (jira_key is None or execution_id is None):
-        raise SystemExit(_NEED_ID)
+        parser.error(_NEED_ID)
+    interval = float(args.follow_interval)
+    if interval <= 0:
+        parser.error("跟随刷新间隔必须大于 0 秒。")
+    follow_max = args.follow_max
+    if follow_max is not None and int(follow_max) < 1:
+        parser.error("--follow-max 必须是正整数。")
     return StatusArgs(
         command="status",
         config_root=str(args.config_root).strip(),
@@ -114,24 +157,21 @@ def status_args_from_parse(args: argparse.Namespace) -> StatusArgs:
         workflow_id=workflow_id,
         jira_key=jira_key,
         execution_id=execution_id,
+        follow=bool(args.follow),
+        follow_interval=interval,
+        follow_until=str(args.follow_until),
+        follow_max=int(follow_max) if follow_max is not None else None,
     )
 
 
 def resolve_status_workflow_id(args: StatusArgs) -> str:
     """Resolve the parent workflow id from flags. Does not start a workflow."""
 
-    if args.workflow_id:
-        return args.workflow_id
-    assert args.jira_key is not None and args.execution_id is not None
-    jira_key = validate_jira_key(args.jira_key)
-    return story_workflow_id(jira_key, args.execution_id)
-
-
-def _optional(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
+    return resolve_parent_workflow_id(
+        workflow_id=args.workflow_id,
+        jira_key=args.jira_key,
+        execution_id=args.execution_id,
+    )
 
 
 async def _default_connect(target: str, *, connect_timeout: object) -> StatusClient:
@@ -161,8 +201,8 @@ async def query_pipeline_status(
     if not isinstance(snap, PipelineSnapshot):
         raise PipelineStatusError("查询返回了无法识别的快照。")
     clock = now or datetime.now(UTC)
-    files = recorded if recorded is not None else load_recorded_progress(
-        config_root, snap.execution_id
+    files = (
+        recorded if recorded is not None else load_recorded_progress(config_root, snap.execution_id)
     )
     current_step = str(files.get("current_step") or "") or None
     last_at = str(files.get("last_heartbeat_at") or "") or None
@@ -311,6 +351,8 @@ def format_status(snap: PipelineSnapshot) -> str:
         f"tickets={','.join(tickets)}",
         f"budget_spent={spent}",
         f"last_failure_reason={snap.last_failure_reason or ''}",
+        f"last_rejection_signal={snap.last_rejection.signal if snap.last_rejection else ''}",
+        f"last_rejection_reason={snap.last_rejection.reason if snap.last_rejection else ''}",
         f"jira_mirror_lagged={str(mirror_lagged).lower()}",
         f"current_step={progress.current_step or ''}",
         f"last_heartbeat_at={progress.last_heartbeat_at or ''}",
@@ -348,6 +390,8 @@ async def run_status(args: StatusArgs, *, connect: StatusConnectFn | None = None
 
 
 __all__ = [
+    "DEFAULT_FOLLOW_INTERVAL_SECONDS",
+    "FOLLOW_UNTIL_CHOICES",
     "StatusArgs",
     "add_status_parser",
     "format_status",

@@ -66,3 +66,10 @@ class JiraMirrorError(RuntimeError):
 class PipelineStatusError(ValueError):
     """CLI or client status query failed visibly and must not write state."""
 
+
+class PipelineSignalError(ValueError):
+    """CLI signal delivery failed or the Workflow rejected the Signal."""
+
+
+class PipelineUsageError(ValueError):
+    """Missing or illegal CLI arguments; the process should exit 2."""

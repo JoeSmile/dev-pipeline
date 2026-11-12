@@ -130,9 +130,9 @@ Worker 启动成功与配置根目录错误都会通过 structlog 记录，不�
 
 非 Windows 环境可以使用 `scripts/start-worker.sh --config-root /absolute/path`，约定与上面相同。
 
-## 7. 用 CLI 启动进入 Intake
+## 7. 用 CLI 启动、发 Signal、查状态
 
-Worker 已连接后，用 CLI 根据 Jira key 显式启动一条父执行。Jira 不是编排器；本入口只校验 key 形态，不拉取远端 Issue，也不监听标签。可复制的验收命令：
+Worker 已连接后，用 CLI 根据 Jira key 显式启动一条父执行，再用人信号完成门禁，并用 `status` / `--follow` 查看进度。Jira 不是编排器；本入口只校验 key 形态，不拉取远端 Issue，也不监听标签。可复制的验收命令（Windows 第一本地环境）：
 
 ```powershell
 dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
@@ -150,7 +150,15 @@ python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-conf
 - `--temporal-target`，默认 `localhost:7233`
 - `--task-queue`，默认 `dev-pipeline`
 
-成功时标准输出会打印 `workflow_id`、`execution_id` 和 Jira key，并写明已进入 Intake。若省略 `--config-root`、路径不存在、不是绝对路径、目录缺少合法 `budget.toml`、Jira key 非法、Temporal 不可达，或目标 workflow id 已存在，进程会以中文错误非零退出。已存在的执行不会被当成启动成功。
+成功时标准输出会打印 `workflow_id`、`execution_id` 和 Jira key，并写明已进入 Intake。然后可抄以下命令完成一次人工门禁并查看状态：
+
+```powershell
+dev-pipeline signal lock_scope --config-root D:\pipeline-config --workflow-id story-DP-13-<execution_id> --in-scope "登录校验" --out-of-scope "支付" --locked-by "Joe"
+dev-pipeline status --workflow-id story-DP-13-<execution_id> --config-root D:\pipeline-config
+dev-pipeline status --follow --workflow-id story-DP-13-<execution_id> --config-root D:\pipeline-config
+```
+
+`status` 打印当前步骤、最近进度行和最近心跳；等候门禁显示「正在等候你确认××」，心跳过期只标「可能无响应」。`--follow` 持续刷新，默认间隔 2 秒（待证），只读、不改状态。退出码：0 成功；2 用法或配置错误（缺 `--config-root`、路径非法、payload 缺字段、未知 Signal 等）；1 Temporal 不可达、找不到执行或 Signal 被拒绝（阶段不变）；130 为 Ctrl+C 结束跟随。若省略 `--config-root`、路径不存在、不是绝对路径、`start` 时目录缺少合法 `budget.toml`、Jira key 非法、Temporal 不可达，或目标 workflow id 已存在，进程会以中文错误非零退出。已存在的执行不会被当成启动成功。契约见 README 与 `plans/superpowers/DP-28.md`。
 
 ## 8. 本骨架尚未包含的内容
 
@@ -158,4 +166,4 @@ python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-conf
 - Cursor CLI 运行时
 - 与 `agent-platform` 的对接
 - 真实测试环境发布（目前只有拒绝生产目标的桩 Activity）
-- 连续跟随刷新（[DP-28](https://weiperfect007.atlassian.net/browse/DP-28)）；只读 `dev-pipeline status` 与 Query 快照已由 [DP-27](https://weiperfect007.atlassian.net/browse/DP-27) 提供
+- MCP / BA 视图与现场 Cursor stream-json 运行时（[DP-38](https://weiperfect007.atlassian.net/browse/DP-38)、[DP-42](https://weiperfect007.atlassian.net/browse/DP-42)、[DP-46](https://weiperfect007.atlassian.net/browse/DP-46)）；操作 CLI 的 start / signal / status --follow 已由 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28) 提供

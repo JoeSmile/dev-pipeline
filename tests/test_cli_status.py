@@ -1,4 +1,4 @@
-"""CLI ``status`` is a thin read-only Query printer (no follow loop)."""
+"""CLI ``status`` is a thin read-only Query printer, including follow refresh."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from temporalio.testing import WorkflowEnvironment
 from tests.stub_activities import StubController
 from tests.workflow_helpers import complete_ticket, start_parent, story
 
-from dev_pipeline.cli import parse_cli_args
+from dev_pipeline.cli import main, parse_cli_args
 from dev_pipeline.cli_status import StatusArgs, format_status, run_status
 from dev_pipeline.models import story_workflow_id
 from dev_pipeline.workflows import DevPipelineWorkflow
@@ -114,6 +114,7 @@ def test_format_status_mentions_unresponsive_label() -> None:
         tickets=[],
         budget=None,
         last_failure_reason=None,
+        last_rejection=None,
         jira_mirror=None,
         progress=SimpleNamespace(
             waiting_confirmation=None,
@@ -129,3 +130,118 @@ def test_format_status_mentions_unresponsive_label() -> None:
     assert "current_step=正在写代码：实现登录校验" in text
 
 
+def test_parse_status_follow_flags_and_rejects_bad_interval() -> None:
+    args = parse_cli_args(
+        [
+            "status",
+            "--config-root",
+            "/abs/config",
+            "--workflow-id",
+            "story-DP-13-exec-1",
+            "--follow",
+            "--follow-interval",
+            "0.5",
+            "--follow-until",
+            "waiting",
+            "--follow-max",
+            "3",
+        ]
+    )
+    assert isinstance(args, StatusArgs)
+    assert args.follow is True
+    assert args.follow_interval == 0.5
+    assert args.follow_until == "waiting"
+    assert args.follow_max == 3
+    with pytest.raises(SystemExit) as exc:
+        parse_cli_args(
+            [
+                "status",
+                "--config-root",
+                "/abs/config",
+                "--workflow-id",
+                "story-DP-13-exec-1",
+                "--follow-interval",
+                "0",
+            ]
+        )
+    assert exc.value.code == 2
+
+
+def test_main_status_missing_config_root_exits_nonzero_in_chinese(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["status", "--workflow-id", "story-DP-13-exec-1"])
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    text = captured.out + captured.err
+    assert "配置根目录是必填参数" in text
+
+
+def test_format_status_distinguishes_waiting_from_expired() -> None:
+    waiting = SimpleNamespace(
+        stage=SimpleNamespace(value="Intake"),
+        waiting_signal="lock_scope",
+        tickets=[],
+        budget=None,
+        last_failure_reason=None,
+        last_rejection=None,
+        jira_mirror=None,
+        progress=SimpleNamespace(
+            waiting_confirmation="正在等候你确认锁定范围",
+            current_step="",
+            last_heartbeat_at="",
+            heartbeat_expired=False,
+            unresponsive_label=None,
+            recent_hints=[],
+        ),
+    )
+    waiting_text = format_status(waiting)  # type: ignore[arg-type]
+    assert "正在等候你确认锁定范围" in waiting_text
+    assert "unresponsive_label=可能无响应" not in waiting_text
+    expired = SimpleNamespace(
+        stage=SimpleNamespace(value="Implementing"),
+        waiting_signal=None,
+        tickets=[],
+        budget=None,
+        last_failure_reason=None,
+        last_rejection=None,
+        jira_mirror=None,
+        progress=SimpleNamespace(
+            waiting_confirmation=None,
+            current_step="正在写代码：实现登录校验",
+            last_heartbeat_at="2026-11-12T12:00:00+00:00",
+            heartbeat_expired=True,
+            unresponsive_label="可能无响应",
+            recent_hints=["正在写代码：实现登录校验"],
+        ),
+    )
+    expired_text = format_status(expired)  # type: ignore[arg-type]
+    assert "unresponsive_label=可能无响应" in expired_text
+    assert "正在等候你确认" not in expired_text
+    assert "current_step=正在写代码：实现登录校验" in expired_text
+    assert "last_heartbeat_at=2026-11-12T12:00:00+00:00" in expired_text
+    assert "recent_hints=" in expired_text
+
+
+def test_main_status_unreachable_exits_nonzero(
+    tmp_config_root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def connect(*_args: object, **_kwargs: object) -> object:
+        raise OSError("connection refused")
+
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "status",
+                "--config-root",
+                str(tmp_config_root),
+                "--workflow-id",
+                "story-DP-13-missing",
+            ],
+            connect=connect,
+        )
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "无法连接 Temporal" in err
+    assert "connection refused" in err
