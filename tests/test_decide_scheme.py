@@ -115,7 +115,11 @@ async def test_valid_decide_scheme_without_red_line_reaches_tickets_ready(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.TICKETS_READY and item.scheme is not None,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.scheme is not None
+                and item.waiting_signal == "submit_tickets"
+            ),
         )
         assert snap.scheme is not None
         assert snap.scheme.tradeoff == "采用单点登录，不重写账号库"
@@ -125,7 +129,7 @@ async def test_valid_decide_scheme_without_red_line_reaches_tickets_ready(
         assert _DECIDED_AT.match(snap.scheme.decided_at)
         assert snap.scheme.retrieval == "桩"
         assert snap.scheme.has_high_risk_assumption is False
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert started(snap, "A") is False
         history = await handle.fetch_history()
         assert initiated_child_workflow_ids(history) == []
@@ -156,6 +160,7 @@ async def test_valid_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
                 item.stage is ParentStage.TICKETS_READY
                 and item.scheme is not None
                 and item.spike is not None
+                and item.waiting_signal == "submit_tickets"
             ),
         )
         assert snap.scheme is not None
@@ -167,7 +172,7 @@ async def test_valid_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
         assert snap.scheme.has_high_risk_assumption is True
         assert snap.spike is not None
         assert snap.spike.conclusion == "验证过"
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert started(snap, "A") is False
         history = await handle.fetch_history()
         assert initiated_child_workflow_ids(history) == []

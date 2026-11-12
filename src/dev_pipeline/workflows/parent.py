@@ -14,6 +14,7 @@ from dev_pipeline.workflows.parent_orchestrate import ParentOrchestrationMixin
 from dev_pipeline.workflows.parent_reopen import ParentReopenMixin
 from dev_pipeline.workflows.parent_signals import ParentSignalMixin
 from dev_pipeline.workflows.parent_state import ParentState
+from dev_pipeline.workflows.parent_tickets import ParentTicketsMixin
 
 
 @workflow.defn
@@ -23,6 +24,7 @@ class DevPipelineWorkflow(
     ParentReopenMixin,
     ParentBudgetMixin,
     ParentJiraMirrorMixin,
+    ParentTicketsMixin,
     ParentOrchestrationMixin,
 ):
     """Parent legal path, human gates, child orchestration, and TestDeploying."""
@@ -54,23 +56,22 @@ class DevPipelineWorkflow(
             if blocked is not None:
                 return blocked
         else:
-            await self._move(ParentStage.TICKETS_READY, "no_high_risk_assumption")
-            state.waiting = None
+            await self._enter_tickets_ready("no_high_risk_assumption")
         if state.abort_requested:
             return await self._block("abort")
+        blocked_list = await self._wait_for_complete_ticket_list()
+        if blocked_list is not None:
+            return blocked_list
         if self._should_start_children():
+            await self._persist_tickets_to_jira()
             await self._move(ParentStage.IMPLEMENTING, "start_eligible_children")
+            await self._create_all_ticket_children()
             await self._orchestrate_tickets()
             if state.abort_requested:
                 return await self._block(state.abort_reason)
             return await self._run_test_deploy_and_retro()
         await workflow.wait_condition(lambda: state.abort_requested)
         return await self._block(state.abort_reason)
-
-    def _should_start_children(self) -> bool:
-        """Skeleton tests may opt into Child dispatch; production stays at TicketsReady."""
-        payload = self._state.input
-        return payload is not None and payload.auto_start_children
 
     @workflow.query
     def snapshot(self) -> PipelineSnapshot:

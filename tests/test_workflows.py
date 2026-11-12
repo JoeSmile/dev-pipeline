@@ -11,6 +11,7 @@ from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
     authorize_test_deploy,
+    complete_ticket,
     exception_text,
     scheme_decision,
     stage_of,
@@ -33,7 +34,6 @@ from dev_pipeline.models import (
     ReviewOverride,
     ScopeLock,
     StoryInput,
-    TicketSpec,
     ticket_workflow_id,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
@@ -45,7 +45,7 @@ pytestmark = pytest.mark.asyncio
 async def test_happy_path_reaches_done_via_test_deploying(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="T-1")])
+    payload = story(tmp_config_root, [complete_ticket("T-1")])
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
@@ -66,7 +66,7 @@ async def test_sibling_in_reviewing_blocks_parent_test_deploy_and_retro(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.hold("review", "B")
@@ -95,7 +95,7 @@ async def test_sibling_in_reviewing_blocks_parent_test_deploy_and_retro(
 async def test_parent_cannot_enter_retro_when_test_deploy_fails(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.publish_succeeds = False
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -116,7 +116,7 @@ async def test_independent_tickets_start_in_parallel(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.hold("implement", "A", "B")
@@ -143,8 +143,8 @@ async def test_dependent_ticket_does_not_start_early(
     payload = story(
         tmp_config_root,
         [
-            TicketSpec(ticket_id="A"),
-            TicketSpec(ticket_id="B", depends_on=["A"]),
+            complete_ticket("A"),
+            complete_ticket("B", depends_on=["A"]),
         ],
     )
     controller = StubController()
@@ -156,6 +156,7 @@ async def test_dependent_ticket_does_not_start_early(
         assert started(snap, "A")
         assert not started(snap, "B")
         assert stage_of(snap, "B") is TicketStage.PENDING
+        assert {item.ticket_id for item in snap.tickets if item.child_created} == {"A", "B"}
         assert "B" not in controller.started
         controller.release("implement", "A")
         await wait_snapshot(handle, lambda item: stage_of(item, "A") is TicketStage.VERIFIED)
@@ -174,7 +175,7 @@ async def test_one_child_failure_does_not_cancel_sibling_and_blocks_retro(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.implement_errors.add("A")
@@ -214,7 +215,7 @@ async def test_one_child_failure_does_not_cancel_sibling_and_blocks_retro(
 async def test_missing_config_root_fails_workflow_visibly(
     workflow_env: WorkflowEnvironment, tmp_path: Path
 ) -> None:
-    payload = story(tmp_path / "missing-config", [TicketSpec(ticket_id="A")])
+    payload = story(tmp_path / "missing-config", [complete_ticket("A")])
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
@@ -234,7 +235,7 @@ async def test_empty_config_root_fails_workflow_visibly(
         story_id="STORY-empty",
         execution_id="exec-empty",
         config_root="",
-        tickets=[TicketSpec(ticket_id="A")],
+        tickets=[complete_ticket("A")],
     )
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -260,7 +261,7 @@ async def test_production_publish_activity_is_rejected() -> None:
 async def test_blocking_review_waits_for_human_gate(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.review_findings["A"] = ReviewFindings(blocking=["must gate"], paradigm_drift=False)
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -284,7 +285,7 @@ async def test_blocking_review_waits_for_human_gate(
 async def test_abort_from_intake_blocks_and_reopen_is_rejected(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
@@ -307,7 +308,7 @@ async def test_abort_from_intake_blocks_and_reopen_is_rejected(
 async def test_spike_reject_blocks(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.spike_red_line = True
     controller.spike_has_protection = True

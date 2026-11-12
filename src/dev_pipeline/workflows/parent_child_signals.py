@@ -45,7 +45,9 @@ class ParentChildSignalMixin:
             return
         snap.stage = update.stage
         snap.detail = update.detail
-        snap.started = True
+        # A Pending notify only means the Child exists; work has not started.
+        if update.stage is not TicketStage.PENDING:
+            snap.started = True
         if update.stage is TicketStage.DROPPED:
             snap.unhandled_failure = False
         else:

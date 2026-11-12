@@ -3,6 +3,7 @@
 from dev_pipeline.activities.budget import load_budget_config, run_debate, run_model_call, run_rag
 from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
+from dev_pipeline.activities.jira_tickets import persist_jira_tickets
 from dev_pipeline.activities.reopen import ReopenStarter
 from dev_pipeline.activities.spike import load_spike_config, run_spike
 from dev_pipeline.activities.story_draft import normalize_story_draft
@@ -23,6 +24,7 @@ STUB_ACTIVITIES = (
     run_spike,
     mirror_parent_stage,
     mark_jira_mirror_lag,
+    persist_jira_tickets,
     claim_ticket_workspace,
     implement_ticket,
     review_ticket,
@@ -44,6 +46,7 @@ __all__ = [
     "mark_jira_mirror_lag",
     "normalize_story_draft",
     "mirror_parent_stage",
+    "persist_jira_tickets",
     "publish_to_test_env",
     "review_ticket",
     "run_debate",

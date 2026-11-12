@@ -82,7 +82,11 @@ async def test_verified_spike_reaches_tickets_ready_without_children(
         await _lock_and_decide(handle, payload, high_risk=True)
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.TICKETS_READY and item.spike is not None,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.spike is not None
+                and item.waiting_signal == "submit_tickets"
+            ),
         )
         assert snap.spike is not None
         assert snap.spike.conclusion == "验证过"
@@ -91,7 +95,7 @@ async def test_verified_spike_reaches_tickets_ready_without_children(
         assert snap.spike.budget_seconds > 0
         assert snap.spike.started_at
         assert snap.spike.finished_at
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert snap.stage is not ParentStage.IMPLEMENTING
         history = await handle.fetch_history()
         assert "run_spike" in scheduled_activity_names(history)
@@ -149,9 +153,15 @@ async def test_broken_red_line_with_protection_waits_for_approve_accept(
         assert snap.spike.has_protection is True
         assert started(snap, "A") is False
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=True))
-        snap = await wait_snapshot(handle, lambda item: item.stage is ParentStage.TICKETS_READY)
+        snap = await wait_snapshot(
+            handle,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.waiting_signal == "submit_tickets"
+            ),
+        )
         assert snap.stage is ParentStage.TICKETS_READY
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         history = await handle.fetch_history()
         _assert_no_coding_child(history, snap)
     finally:
@@ -314,9 +324,15 @@ async def test_no_red_line_still_skips_spike_and_does_not_dispatch_children(
     worker, handle = await start_parent(workflow_env, payload, StubController())
     try:
         await _lock_and_decide(handle, payload, high_risk=False)
-        snap = await wait_snapshot(handle, lambda item: item.stage is ParentStage.TICKETS_READY)
+        snap = await wait_snapshot(
+            handle,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.waiting_signal == "submit_tickets"
+            ),
+        )
         assert snap.spike is None
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         history = await handle.fetch_history()
         assert "run_spike" not in scheduled_activity_names(history)
         _assert_no_coding_child(history, snap)

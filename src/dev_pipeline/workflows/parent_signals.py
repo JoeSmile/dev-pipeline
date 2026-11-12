@@ -15,11 +15,13 @@ from dev_pipeline.models import (
     ReviewOverride,
     SchemeDecision,
     ScopeLock,
+    TicketListSubmission,
     format_scope_lock_time,
     has_red_line_hypothesis,
 )
 from dev_pipeline.signal_schemas import parse_human_signal
 from dev_pipeline.stages import ParentStage, TicketStage
+from dev_pipeline.ticket_list import is_complete_ticket_list
 from dev_pipeline.transitions import can_enter_test_deploying
 from dev_pipeline.workflows.parent_state import ParentState
 
@@ -107,6 +109,27 @@ class ParentSignalMixin:
             )
             return
         self._state.spike_accepted = parsed.accepted
+
+    @workflow.signal
+    def submit_tickets(self, payload: Any) -> None:
+        """Accept a complete ticket list while the parent is in TicketsReady."""
+        parsed = self._parsed("submit_tickets", payload)
+        if parsed is None:
+            return
+        assert isinstance(parsed, TicketListSubmission)
+        if self._state.stage is not ParentStage.TICKETS_READY:
+            self._reject(
+                "submit_tickets",
+                f"非法转移: {self._state.stage.value} --submit_tickets--> TicketsReady。"
+                "当前阶段不能提交拆票清单",
+            )
+            return
+        if is_complete_ticket_list(self._state.specs):
+            self._reject("submit_tickets", "清单已齐，不能再提交")
+            return
+        self._state.install_tickets(parsed.tickets)
+        self._state.ticket_list_submitted_by = parsed.submitted_by
+        self._state.ticket_list_submitted_at = format_scope_lock_time(workflow.now())
 
     @workflow.signal
     def abort(self, payload: Any) -> None:

@@ -19,7 +19,7 @@ stateDiagram-v2
     SchemeDecided --> TicketsReady: no_high_risk_assumption
     Spike --> TicketsReady: spike_verified / approve_spike_accept
     Spike --> Blocked: approve_spike_reject / red_line_fail / spike_overrun
-    TicketsReady --> Implementing: start_eligible_children
+    TicketsReady --> Implementing: start_eligible_children（清单齐）
     Implementing --> TestDeploying: authorize_test_deploy
     TestDeploying --> Retro: test_deploy_success
     TestDeploying --> Blocked: test_deploy_failure
@@ -76,7 +76,7 @@ stateDiagram-v2
 | ScopeLocked | 要解决 / 不做什么已锁，并写入执行记录（锁定人、时间）；`reopen` 只读继承 |
 | SchemeDecided | 取舍记录 + 假设分级（红线 / 局部 / 候选） |
 | Spike | 可证伪结论写入 `snapshot.spike`；验证过进 TicketsReady；击穿红线且无防护或超时未验证则 Blocked；有防护须经 `approve_spike`。过线后不直接 Implementing，不派 Coding Child |
-| TicketsReady | 每张票有目标、验收、依赖、I/O 契约 |
+| TicketsReady | 每张票有目标、验收、依赖、I/O 契约；清单齐后进入 Implementing 并为每张必做票建立 Child。票写入 Jira 项目 DP，不写 TASKS.md |
 | Implementing | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此等待 Child |
 | Reviewing | 双 Agent 并行输出阻断/建议/信息，并引用规则条文；无新证据即停 |
 | HumanGate | 人工 Signal：放行 / 打回 / 否决 |

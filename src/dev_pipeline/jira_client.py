@@ -139,6 +139,55 @@ class JiraHttpStore:
             json={"fields": {field_name: value}},
         )
 
+    def find_issue_key_by_marker(self, marker: str, project_key: str) -> str | None:
+        """Search project issues whose description contains the idempotency marker."""
+
+        jql = f'project = {project_key} AND text ~ "{marker}"'
+        payload = self._request(
+            "GET",
+            "/rest/api/3/search",
+            marker,
+            params={"jql": jql, "fields": "key", "maxResults": "50"},
+        )
+        if not isinstance(payload, dict):
+            return None
+        issues = payload.get("issues") or []
+        if not isinstance(issues, list):
+            return None
+        for item in issues:
+            if isinstance(item, dict) and item.get("key"):
+                return str(item["key"])
+        return None
+
+    def create_issue(
+        self,
+        *,
+        project_key: str,
+        issue_type: str,
+        summary: str,
+        description: str,
+        labels: list[str],
+    ) -> str:
+        """Create one issue in the given project and return its key."""
+
+        payload = self._request(
+            "POST",
+            "/rest/api/3/issue",
+            summary,
+            json={
+                "fields": {
+                    "project": {"key": project_key},
+                    "issuetype": {"name": issue_type},
+                    "summary": summary,
+                    "description": text_to_adf(description),
+                    "labels": labels,
+                }
+            },
+        )
+        if not isinstance(payload, dict) or not payload.get("key"):
+            raise JiraMirrorError(f"Jira 建票响应缺少 key（{summary}）")
+        return str(payload["key"])
+
     def _request(
         self,
         method: str,
@@ -146,7 +195,7 @@ class JiraHttpStore:
         issue_key: str,
         *,
         json: dict[str, Any] | None = None,
-        params: dict[str, int] | None = None,
+        params: dict[str, str] | dict[str, int] | None = None,
     ) -> object:
         try:
             response = self._client.request(method, path, json=json, params=params)
@@ -155,9 +204,7 @@ class JiraHttpStore:
         if response.status_code == 404:
             raise JiraMirrorError(_NOT_FOUND.format(key=issue_key))
         if response.status_code >= 400:
-            raise JiraMirrorError(
-                _HTTP_FAILED.format(status=response.status_code, key=issue_key)
-            )
+            raise JiraMirrorError(_HTTP_FAILED.format(status=response.status_code, key=issue_key))
         if not response.content:
             return {}
         try:

@@ -200,3 +200,63 @@ def test_http_store_paginates_comments_to_find_existing_mirror() -> None:
     assert result.comment_updated is True
     assert any("startAt=1" in url for url in calls)
 
+
+def test_http_store_finds_existing_ticket_and_creates_once() -> None:
+    from dev_pipeline.models import TicketSpec
+    from dev_pipeline.ticket_list import (
+        JiraTicketPersistInput,
+        persist_tickets,
+        ticket_idempotency_marker,
+        ticket_issue_description,
+        ticket_issue_summary,
+    )
+
+    issues: list[dict[str, Any]] = []
+    creates: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path.endswith("/search"):
+            jql = request.url.params.get("jql", "")
+            matched = [{"key": item["key"]} for item in issues if item["marker"] in jql]
+            return httpx.Response(200, json={"issues": matched})
+        if request.method == "POST" and request.url.path.endswith("/issue"):
+            payload = json.loads(request.content)
+            fields = payload["fields"]
+            key = f"DP-{len(issues) + 1}"
+            description = fields["description"]
+            # ADF body is searched via marker stored alongside
+            from dev_pipeline.jira_client import adf_to_text
+
+            text = adf_to_text(description)
+            issues.append({"key": key, "marker": "dp-ticket:", "body": text})
+            # extract exact marker
+            for line in text.splitlines():
+                if line.startswith("marker: "):
+                    issues[-1]["marker"] = line.removeprefix("marker: ")
+            creates.append(key)
+            return httpx.Response(201, json={"key": key})
+        return httpx.Response(500, json={"error": "unexpected"})
+
+    store = JiraHttpStore(_CONFIG, client=_client(handler))
+    spec = TicketSpec(
+        ticket_id="T-1",
+        goal="实现接口",
+        acceptance="单测通过",
+        io_contract="输入/输出",
+    )
+    payload = JiraTicketPersistInput(
+        story_id="STORY-1",
+        execution_id="exec-1",
+        config_root="/tmp/config",
+        tickets=[spec],
+    )
+    first = persist_tickets(store, payload)
+    second = persist_tickets(store, payload)
+    assert first.created == 1
+    assert second.created == 0
+    assert second.reused == 1
+    assert first.tickets[0].jira_key == second.tickets[0].jira_key == "DP-1"
+    assert creates == ["DP-1"]
+    assert ticket_idempotency_marker("STORY-1", "T-1", "exec-1") in issues[0]["body"]
+    assert ticket_issue_summary(spec).startswith("【DevPipeline Ticket】")
+    assert "I/O 契约" in ticket_issue_description(spec, story_id="STORY-1", execution_id="exec-1")

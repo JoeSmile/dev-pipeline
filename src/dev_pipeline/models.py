@@ -64,11 +64,16 @@ class TicketSpec:
     """One implementation ticket on a Story, including dependency edges.
 
     Every ticket in the start payload is required. The only in-scope way to
-    take a ticket off the list after start is ``drop_ticket``.
+    take a ticket off the list after start is ``drop_ticket``. A complete
+    list item also carries 目标, 验收, and I/O 契约; ``depends_on`` is 依赖.
     """
 
     ticket_id: str
+    goal: str = ""
+    acceptance: str = ""
     depends_on: list[str] = field(default_factory=list)
+    io_contract: str = ""
+    jira_key: str = ""
 
 
 @dataclass
@@ -438,13 +443,36 @@ class TicketStateUpdate:
 
 
 @dataclass
+class TicketListSubmission:
+    """Payload for the submit_tickets human signal."""
+
+    tickets: list[TicketSpec]
+    submitted_by: str = ""
+
+
+@dataclass
+class JiraTicketWriteSnapshot:
+    """Queryable Jira ticket-write status on the existing parent snapshot."""
+
+    lagged: bool = False
+    lag_marker: str | None = None
+    lag_reason: str | None = None
+    issue_keys: list[str] = field(default_factory=list)
+
+
+@dataclass
 class TicketSnapshot:
     """One ticket's visible state on the parent snapshot."""
 
     ticket_id: str
     stage: TicketStage
     depends_on: list[str] = field(default_factory=list)
+    goal: str = ""
+    acceptance: str = ""
+    io_contract: str = ""
+    jira_key: str = ""
     started: bool = False
+    child_created: bool = False
     unhandled_failure: bool = False
     detail: str = ""
 
@@ -483,6 +511,10 @@ class PipelineSnapshot:
     scope: ScopeLock | None = None
     scheme: SchemeDecision | None = None
     spike: SpikeRecord | None = None
+    ticket_list_complete: bool = False
+    ticket_list_submitted_by: str = ""
+    ticket_list_submitted_at: str = ""
+    jira_tickets: JiraTicketWriteSnapshot | None = None
 
 
 @dataclass

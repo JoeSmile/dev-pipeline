@@ -23,6 +23,7 @@ from dev_pipeline.models import (
     ReopenRequest,
     ReviewOverride,
     ScopeLock,
+    TicketListSubmission,
     TicketSpec,
     story_workflow_id,
 )
@@ -82,6 +83,10 @@ async def test_live_temporal_history_records_signals_and_reopen(
             PromoteRuleRequest(rule_name="skill", automatic=False),
         )
         await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
+        await handle.signal(
+            DevPipelineWorkflow.submit_tickets,
+            TicketListSubmission(tickets=[], submitted_by="tester"),
+        )
         await handle.signal(DevPipelineWorkflow.reopen, ReopenRequest(execution_id="too-early"))
         await handle.signal(
             DevPipelineWorkflow.lock_scope,

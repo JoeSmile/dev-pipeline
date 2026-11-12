@@ -134,12 +134,16 @@ async def test_live_verified_spike_reaches_tickets_ready(
         await _lock_and_decide(handle, payload)
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.TICKETS_READY and item.spike is not None,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.spike is not None
+                and item.waiting_signal == "submit_tickets"
+            ),
             timeout=30.0,
         )
         assert snap.spike is not None
         assert snap.spike.conclusion == "验证过"
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert all(not item.started for item in snap.tickets)
         history = await handle.fetch_history()
         assert "decide_scheme" in signaled_names(history)
@@ -212,10 +216,13 @@ async def test_live_broken_red_line_with_protection_approve_reaches_tickets_read
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=True))
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.TICKETS_READY,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.waiting_signal == "submit_tickets"
+            ),
             timeout=30.0,
         )
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert all(not item.started for item in snap.tickets)
         history = await handle.fetch_history()
         assert "approve_spike" in signaled_names(history)

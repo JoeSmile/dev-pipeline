@@ -162,6 +162,7 @@ async def test_live_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
                 item.stage is ParentStage.TICKETS_READY
                 and item.scheme is not None
                 and item.spike is not None
+                and item.waiting_signal == "submit_tickets"
             ),
             timeout=30.0,
         )
@@ -174,7 +175,7 @@ async def test_live_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
         assert snap.scheme.has_high_risk_assumption is True
         assert snap.spike is not None
         assert snap.spike.conclusion == "验证过"
-        assert snap.waiting_signal is None
+        assert snap.waiting_signal == "submit_tickets"
         assert all(not item.started for item in snap.tickets)
         history = await handle.fetch_history()
         assert "decide_scheme" in signaled_names(history)

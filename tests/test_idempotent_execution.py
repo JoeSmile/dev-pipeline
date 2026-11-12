@@ -23,6 +23,7 @@ from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
     authorize_test_deploy,
+    complete_ticket,
     scheme_decision,
     stage_of,
     start_parent,
@@ -40,7 +41,6 @@ from dev_pipeline.models import (
     ScopeLock,
     TicketInput,
     TicketResult,
-    TicketSpec,
     story_workflow_id,
     ticket_workflow_id,
 )
@@ -75,7 +75,7 @@ async def wait_claim(controller: StubController, ticket_id: str, execution_id: s
 async def test_same_key_in_progress_has_one_claim_and_one_child_id(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.hold("implement", "A")
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -205,7 +205,6 @@ async def test_same_key_completed_returns_existing_result_and_one_claim(
         await worker.__aexit__(None, None, None)
 
 
-
 async def _wait_not_running(client: object, workflow_id: str, *, timeout: float = 15.0) -> None:
     """Wait until a workflow has left RUNNING (e.g. cancel of a held activity)."""
     loop = asyncio.get_running_loop()
@@ -222,7 +221,7 @@ async def _wait_not_running(client: object, workflow_id: str, *, timeout: float 
 async def test_reopen_uses_new_key_and_leaves_old_claim_untouched(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.hold("implement", "A")
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -283,7 +282,7 @@ async def test_ticket_failure_does_not_damage_sibling_claim_or_mainline(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.implement_errors.add("A")
@@ -292,8 +291,10 @@ async def test_ticket_failure_does_not_damage_sibling_claim_or_mainline(
         await advance_to_implementing(handle, payload)
         snap = await wait_snapshot(
             handle,
-            lambda item: stage_of(item, "A") is TicketStage.FAILED
-            and stage_of(item, "B") is TicketStage.VERIFIED,
+            lambda item: (
+                stage_of(item, "A") is TicketStage.FAILED
+                and stage_of(item, "B") is TicketStage.VERIFIED
+            ),
         )
         claim_a = controller.workspace.get("A", payload.execution_id)
         claim_b = controller.workspace.get("B", payload.execution_id)
@@ -317,7 +318,7 @@ async def test_ticket_failure_does_not_damage_sibling_claim_or_mainline(
 async def test_retry_ticket_does_not_allocate_a_second_workspace_identity(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.implement_fail_remaining["A"] = 1
     worker, handle = await start_parent(workflow_env, payload, controller)

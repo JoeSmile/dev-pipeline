@@ -56,9 +56,7 @@ def test_missing_required_fields_and_type_errors_are_rejected() -> None:
     _, reason = parse_human_signal("lock_scope", {"in_scope": "范围"})
     assert reason is not None and "缺少必填字段" in reason
     assert "out_of_scope" in reason and "locked_by" in reason
-    _, reason = parse_human_signal(
-        "lock_scope", {"in_scope": "范围", "out_of_scope": "非目标"}
-    )
+    _, reason = parse_human_signal("lock_scope", {"in_scope": "范围", "out_of_scope": "非目标"})
     assert reason is not None and "缺少必填字段" in reason and "locked_by" in reason
     _, reason = parse_human_signal(
         "lock_scope",
@@ -195,3 +193,39 @@ def test_is_complete_scope_lock_requires_all_record_fields() -> None:
         locked_at="2026-11-12T05:53:00Z",
     )
     assert is_complete_scope_lock(complete) is True
+
+
+def test_submit_tickets_requires_complete_items_and_submitter() -> None:
+    from dev_pipeline.models import TicketListSubmission
+
+    parsed, reason = parse_human_signal(
+        "submit_tickets",
+        {
+            "submitted_by": "joe",
+            "tickets": [
+                {
+                    "ticket_id": "T-1",
+                    "goal": "实现接口",
+                    "acceptance": "单测通过",
+                    "depends_on": [],
+                    "io_contract": "输入 Story，输出 diff",
+                }
+            ],
+        },
+    )
+    assert reason is None
+    assert isinstance(parsed, TicketListSubmission)
+    assert parsed.submitted_by == "joe"
+    assert parsed.tickets[0].ticket_id == "T-1"
+    _, reason = parse_human_signal("submit_tickets", {"tickets": []})
+    assert reason is not None and "submitted_by" in reason
+    _, reason = parse_human_signal(
+        "submit_tickets",
+        {"submitted_by": "joe", "tickets": [{"ticket_id": "T-1"}]},
+    )
+    assert reason is not None
+    _, reason = parse_human_signal(
+        "submit_tickets",
+        {"submitted_by": "joe", "tickets": "not-a-list"},
+    )
+    assert reason is not None

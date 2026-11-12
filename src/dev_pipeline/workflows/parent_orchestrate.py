@@ -145,8 +145,7 @@ class ParentOrchestrationMixin:
             return blocked
         assert state.spike is not None
         if state.spike.conclusion == SPIKE_VERIFIED:
-            await self._move(ParentStage.TICKETS_READY, "spike_verified")
-            state.waiting = None
+            await self._enter_tickets_ready("spike_verified")  # type: ignore[attr-defined]
             return None
         if state.spike.conclusion in {SPIKE_BROKEN, SPIKE_OVERRUN} and not (
             state.spike.has_protection
@@ -173,8 +172,7 @@ class ParentOrchestrationMixin:
             state.blocked_reason = reason
             await self._move(ParentStage.BLOCKED, "approve_spike_reject")
             return await self._finish_terminal(state.finish_blocked(reason))
-        state.waiting = None
-        await self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
+        await self._enter_tickets_ready("approve_spike_accept")  # type: ignore[attr-defined]
         return None
 
     async def _run_spike_and_record(self) -> PipelineResult | None:
@@ -287,20 +285,37 @@ class ParentOrchestrationMixin:
             state.ticket_event = False
 
     async def _start_eligible(self) -> bool:
+        """Signal dependencies_satisfied for tickets whose deps are now verified."""
         started = False
         for ticket_id in eligible_ticket_ids(self._state.specs, self._state.ticket_list()):
-            await self._start_child(ticket_id)
+            handle = self._children.get(ticket_id)
+            if handle is None:
+                await self._create_child(ticket_id)
+                handle = self._children[ticket_id]
+            snap = self._state.tickets[ticket_id]
+            if snap.started:
+                continue
+            await handle.signal(TicketWorkflow.dependencies_satisfied)
+            snap.started = True
             started = True
         return started
 
-    async def _start_child(self, ticket_id: str) -> None:
+    async def _create_all_ticket_children(self) -> None:
+        """Create one Child for every required ticket once the list is complete."""
+        for spec in self._state.specs:
+            await self._create_child(spec.ticket_id)
+
+    async def _create_child(self, ticket_id: str) -> None:
         existing = self._children.get(ticket_id)
         if existing is not None:
+            snap = self._state.tickets.get(ticket_id)
+            if snap is not None:
+                snap.child_created = True
             return
         payload = self._state.input
         assert payload is not None
         spec = next(item for item in self._state.specs if item.ticket_id == ticket_id)
-        handle, started = await start_or_attach_ticket_child(
+        handle, _started = await start_or_attach_ticket_child(
             TicketInput(
                 ticket_id=ticket_id,
                 execution_id=payload.execution_id,
@@ -315,9 +330,7 @@ class ParentOrchestrationMixin:
             retry_policy=CHILD_RETRY,
         )
         self._children[ticket_id] = handle
-        self._state.tickets[ticket_id].started = True
-        if started:
-            await handle.signal(TicketWorkflow.dependencies_satisfied)
+        self._state.tickets[ticket_id].child_created = True
 
     async def _run_test_deploy_and_retro(self) -> PipelineResult:
         state = self._state

@@ -25,6 +25,7 @@ from tests.history_events import (
 from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
+    complete_ticket,
     started,
     story,
     wait_snapshot,
@@ -37,7 +38,6 @@ from dev_pipeline.constants import CLIENT_CONNECT_TIMEOUT, DEFAULT_TASK_QUEUE
 from dev_pipeline.models import (
     AbortRequest,
     TicketInput,
-    TicketSpec,
     story_workflow_id,
     ticket_workflow_id,
 )
@@ -64,7 +64,7 @@ async def live_client() -> AsyncIterator[Client]:
 async def test_live_same_key_reentry_records_a_single_child_id(
     live_client: Client, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")], suffix=uuid.uuid4().hex[:8])
+    payload = story(tmp_config_root, [complete_ticket("A")], suffix=uuid.uuid4().hex[:8])
     controller = StubController()
     controller.hold("implement", "A")
     starter = ReopenStarter(live_client)

@@ -76,10 +76,7 @@ def stage_comment_body(stage: str, execution_id: str) -> str:
     """Return the idempotent, prefixed comment body for a stage."""
 
     return (
-        f"{STAGE_MIRROR_PREFIX}\n"
-        f"当前阶段: {stage}\n"
-        f"execution_id: {execution_id}\n"
-        f"{_STAGE_FOOTER}"
+        f"{STAGE_MIRROR_PREFIX}\n当前阶段: {stage}\nexecution_id: {execution_id}\n{_STAGE_FOOTER}"
     )
 
 
@@ -160,9 +157,7 @@ def _find_lag_comment(
     matches = [
         item
         for item in comments
-        if item.body.startswith(LAG_MARKER_PREFIX)
-        and marker in item.body
-        and stage in item.body
+        if item.body.startswith(LAG_MARKER_PREFIX) and marker in item.body and stage in item.body
     ]
     return matches[-1] if matches else None
 
@@ -173,7 +168,9 @@ class InMemoryJira:
 
     _comments: dict[str, list[JiraComment]] = field(default_factory=dict)
     _fields: dict[str, dict[str, str]] = field(default_factory=dict)
+    _issues: dict[str, dict[str, object]] = field(default_factory=dict)
     _next_id: int = 1
+    _next_issue: int = 1
 
     def list_comments(self, issue_key: str) -> list[JiraComment]:
         """Return a copy of comments for the issue."""
@@ -229,7 +226,45 @@ class InMemoryJira:
                 return line.removeprefix("当前阶段: ")
         return None
 
+    def find_issue_key_by_marker(self, marker: str, project_key: str) -> str | None:
+        """Return a stored issue key whose description contains the marker."""
+
+        for key, issue in self._issues.items():
+            if issue.get("project") != project_key:
+                continue
+            description = str(issue.get("description") or "")
+            if marker in description:
+                return key
+        return None
+
+    def create_issue(
+        self,
+        *,
+        project_key: str,
+        issue_type: str,
+        summary: str,
+        description: str,
+        labels: list[str],
+    ) -> str:
+        """Store a fake issue and assign a monotonic DP-like key."""
+
+        key = f"{project_key}-{self._next_issue}"
+        self._next_issue += 1
+        self._issues[key] = {
+            "project": project_key,
+            "issue_type": issue_type,
+            "summary": summary,
+            "description": description,
+            "labels": list(labels),
+        }
+        return key
+
+    def issues(self) -> dict[str, dict[str, object]]:
+        """Return a copy of created issues for tests."""
+
+        return {key: dict(value) for key, value in self._issues.items()}
+
     def dump(self) -> str:
         """Return a debug rendering that must never include secrets."""
 
-        return repr({"comments": self._comments, "fields": self._fields})
+        return repr({"comments": self._comments, "fields": self._fields, "issues": self._issues})

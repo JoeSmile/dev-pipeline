@@ -12,6 +12,7 @@ from dev_pipeline.budget import (
 from dev_pipeline.jira_mirror import LAG_MARKER_LABEL
 from dev_pipeline.models import (
     JiraMirrorSnapshot,
+    JiraTicketWriteSnapshot,
     PipelineResult,
     PipelineSnapshot,
     ReopenRequest,
@@ -25,6 +26,7 @@ from dev_pipeline.models import (
     TicketSpec,
 )
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
+from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
 from dev_pipeline.transitions import ParentGuardContext, assert_legal_transition
 
 
@@ -64,6 +66,9 @@ class ParentState:
         self.costly_busy = False
         self.jira_mirror: JiraMirrorSnapshot | None = None
         self.story_draft: StoryDraft | None = None
+        self.ticket_list_submitted_by = ""
+        self.ticket_list_submitted_at = ""
+        self.jira_tickets: JiraTicketWriteSnapshot | None = None
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -75,7 +80,12 @@ class ParentState:
                 ticket_id=spec.ticket_id,
                 stage=TicketStage.PENDING,
                 depends_on=list(spec.depends_on),
+                goal=spec.goal,
+                acceptance=spec.acceptance,
+                io_contract=spec.io_contract,
+                jira_key=spec.jira_key,
                 started=False,
+                child_created=False,
             )
             for spec in specs
         }
@@ -191,6 +201,36 @@ class ParentState:
             last_stop_reason=self.budget_last_stop_reason,
         )
 
+    def record_jira_ticket_success(self, tickets: list[TicketSpec]) -> None:
+        """Record successful Jira ticket writes and copy issue keys onto snapshots."""
+        keys: list[str] = []
+        by_id = {spec.ticket_id: spec for spec in tickets}
+        for spec in self.specs:
+            written = by_id.get(spec.ticket_id)
+            if written is None or not written.jira_key:
+                continue
+            spec.jira_key = written.jira_key
+            keys.append(written.jira_key)
+            snap = self.tickets.get(spec.ticket_id)
+            if snap is not None:
+                snap.jira_key = written.jira_key
+        self.jira_tickets = JiraTicketWriteSnapshot(
+            lagged=False,
+            lag_marker=None,
+            lag_reason=None,
+            issue_keys=keys,
+        )
+
+    def record_jira_ticket_lag(self, reason: str) -> None:
+        """Record 写票滞后 without changing the current parent stage."""
+        last = [] if self.jira_tickets is None else list(self.jira_tickets.issue_keys)
+        self.jira_tickets = JiraTicketWriteSnapshot(
+            lagged=True,
+            lag_marker=TICKET_WRITE_LAG_LABEL,
+            lag_reason=reason,
+            issue_keys=last,
+        )
+
     def snapshot(self) -> PipelineSnapshot:
         """Build the queryable progress snapshot."""
         story_id = self.input.story_id if self.input is not None else ""
@@ -217,4 +257,8 @@ class ParentState:
             scope=self.scope,
             scheme=self.scheme,
             spike=self.spike,
+            ticket_list_complete=is_complete_ticket_list(self.specs),
+            ticket_list_submitted_by=self.ticket_list_submitted_by,
+            ticket_list_submitted_at=self.ticket_list_submitted_at,
+            jira_tickets=self.jira_tickets,
         )

@@ -54,6 +54,17 @@ def scope_lock(
     return ScopeLock(in_scope=in_scope, out_of_scope=out_of_scope, locked_by=locked_by)
 
 
+def complete_ticket(ticket_id: str, depends_on: list[str] | None = None) -> TicketSpec:
+    """Build a complete required ticket for tests that enter Implementing."""
+    return TicketSpec(
+        ticket_id=ticket_id,
+        goal=f"实现 {ticket_id}",
+        acceptance=f"{ticket_id} 的验收通过",
+        depends_on=list(depends_on or []),
+        io_contract=f"{ticket_id} 的输入与输出约定",
+    )
+
+
 def story(
     config_root: Path,
     tickets: Sequence[TicketSpec],
@@ -70,7 +81,6 @@ def story(
         summary="test story",
         auto_start_children=auto_start_children,
     )
-
 
 
 def scheme_decision(
@@ -142,8 +152,9 @@ async def advance_to_implementing(
     )
     return await wait_snapshot(
         handle,
-        lambda snap: snap.stage
-        in {ParentStage.IMPLEMENTING, ParentStage.SPIKE, ParentStage.BLOCKED},
+        lambda snap: (
+            snap.stage in {ParentStage.IMPLEMENTING, ParentStage.SPIKE, ParentStage.BLOCKED}
+        ),
     )
 
 
@@ -152,8 +163,9 @@ async def authorize_test_deploy(
 ) -> PipelineSnapshot:
     snap = await wait_snapshot(
         handle,
-        lambda item: item.waiting_signal is not None
-        and WAITING_AUTHORIZE_TEST_DEPLOY in item.waiting_signal,
+        lambda item: (
+            item.waiting_signal is not None and WAITING_AUTHORIZE_TEST_DEPLOY in item.waiting_signal
+        ),
     )
     await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
     return snap

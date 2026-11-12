@@ -35,6 +35,11 @@ from dev_pipeline.models import (
     VerifyResult,
     WorkspaceClaim,
 )
+from dev_pipeline.ticket_list import (
+    JiraTicketPersistInput,
+    JiraTicketPersistResult,
+    persist_tickets,
+)
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace import WorkspaceClaimStore, claim_workspace
 
@@ -81,6 +86,9 @@ class StubController:
     jira_mirror_calls: list[JiraStageMirrorInput] = field(default_factory=list)
     jira_lag_calls: list[JiraLagMarkerInput] = field(default_factory=list)
     jira_mirror_attempts: int = 0
+    jira_ticket_fail_remaining: int = 0
+    jira_ticket_always_fail: bool = False
+    jira_ticket_calls: list[JiraTicketPersistInput] = field(default_factory=list)
 
     def queue_costly(self, path: str, result: CostlyPathResult) -> None:
         self.costly_queue.setdefault(path, []).append(result)
@@ -242,6 +250,18 @@ class StubController:
             controller.jira_lag_calls.append(payload)
             mark_mirror_lag(controller.jira, payload)
 
+        @activity.defn(name="persist_jira_tickets")
+        async def persist_jira_tickets(
+            payload: JiraTicketPersistInput,
+        ) -> JiraTicketPersistResult:
+            controller.jira_ticket_calls.append(payload)
+            if controller.jira_ticket_always_fail:
+                raise RuntimeError("jira unavailable")
+            if controller.jira_ticket_fail_remaining > 0:
+                controller.jira_ticket_fail_remaining -= 1
+                raise RuntimeError("jira unavailable")
+            return persist_tickets(controller.jira, payload)
+
         return (
             validate_config_root,
             load_budget_config,
@@ -257,6 +277,7 @@ class StubController:
             run_model_call,
             mirror_parent_stage,
             mark_jira_mirror_lag,
+            persist_jira_tickets,
             publish_to_test_env,
             write_retro_record,
         )

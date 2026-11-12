@@ -23,9 +23,11 @@ from dev_pipeline.models import (
     SchemeDecision,
     SchemeHypothesis,
     ScopeLock,
+    TicketListSubmission,
     TicketSpec,
     has_red_line_hypothesis,
 )
+from dev_pipeline.ticket_list import ticket_list_completion_error
 
 _REVIEW_DECISIONS = frozenset({"approve", "rework", "reject"})
 
@@ -71,6 +73,11 @@ SCHEMAS: dict[str, SignalSchema] = {
         bool_fields=("automatic",),
     ),
     "authorize_test_deploy": SignalSchema(AuthorizeTestDeployRequest, ()),
+    "submit_tickets": SignalSchema(
+        TicketListSubmission,
+        ("tickets", "submitted_by"),
+        nonempty=("submitted_by",),
+    ),
 }
 
 HUMAN_SIGNAL_NAMES = tuple(SCHEMAS)
@@ -124,15 +131,11 @@ def _as_field_map(
 ) -> tuple[dict[str, Any], str | None]:
     if is_dataclass(payload) and not isinstance(payload, type):
         if not isinstance(payload, schema.payload_type):
-            return {}, (
-                f"{signal} 的 payload 类型无效，需要 {schema.payload_type.__name__}"
-            )
+            return {}, (f"{signal} 的 payload 类型无效，需要 {schema.payload_type.__name__}")
         return {item.name: getattr(payload, item.name) for item in fields(payload)}, None
     if isinstance(payload, dict):
         return dict(payload), None
-    return {}, (
-        f"{signal} 的 payload 类型无效，需要 {schema.payload_type.__name__} 或字段映射"
-    )
+    return {}, (f"{signal} 的 payload 类型无效，需要 {schema.payload_type.__name__} 或字段映射")
 
 
 def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> str | None:
@@ -158,6 +161,8 @@ def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> s
             return _tickets_error(mapping["tickets"])
     if signal == "promote_rule" and "automatic" in mapping and mapping["automatic"] is None:
         return "promote_rule 的 automatic 必须是 bool"
+    if signal == "submit_tickets":
+        return _submit_tickets_error(mapping.get("tickets"))
     return None
 
 
@@ -169,6 +174,13 @@ def _tickets_error(raw: object) -> str | None:
         if not ticket_id:
             return f"decide_scheme 的 tickets[{index}] 缺少非空 ticket_id"
     return None
+
+
+def _submit_tickets_error(raw: object) -> str | None:
+    if not isinstance(raw, list):
+        return "submit_tickets 的 tickets 必须是 TicketSpec 列表"
+    tickets = _build_tickets(raw)
+    return ticket_list_completion_error(tickets)
 
 
 def _hypotheses_error(raw: object) -> str | None:
@@ -216,9 +228,7 @@ def _build_hypotheses(raw: object) -> list[SchemeHypothesis]:
         return hypotheses
     for item in raw:
         if isinstance(item, SchemeHypothesis):
-            hypotheses.append(
-                SchemeHypothesis(statement=item.statement.strip(), grade=item.grade)
-            )
+            hypotheses.append(SchemeHypothesis(statement=item.statement.strip(), grade=item.grade))
             continue
         if isinstance(item, dict):
             statement, raw_grade = _hypothesis_fields(item)
@@ -272,6 +282,11 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
             rule_name=str(mapping["rule_name"]).strip(),
             automatic=bool(automatic),
         )
+    if signal == "submit_tickets":
+        return TicketListSubmission(
+            tickets=_build_tickets(mapping.get("tickets") or []),
+            submitted_by=str(mapping["submitted_by"]).strip(),
+        )
     return AuthorizeTestDeployRequest()
 
 
@@ -290,7 +305,11 @@ def _build_tickets(raw: object) -> list[TicketSpec]:
             tickets.append(
                 TicketSpec(
                     ticket_id=str(item.get("ticket_id") or "").strip(),
+                    goal=str(item.get("goal") or "").strip(),
+                    acceptance=str(item.get("acceptance") or "").strip(),
                     depends_on=[str(dep) for dep in depends],
+                    io_contract=str(item.get("io_contract") or "").strip(),
+                    jira_key=str(item.get("jira_key") or "").strip(),
                 )
             )
     return tickets

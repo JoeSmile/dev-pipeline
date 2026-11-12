@@ -11,6 +11,7 @@ from temporalio.testing import WorkflowEnvironment
 from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
+    complete_ticket,
     scheme_decision,
     start_parent,
     started,
@@ -59,8 +60,9 @@ async def test_wrong_stage_signals_are_rejected_and_stage_stays(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "decide_scheme",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "decide_scheme"
+            ),
         )
         assert snap.stage is ParentStage.INTAKE
         await handle.signal(
@@ -69,8 +71,9 @@ async def test_wrong_stage_signals_are_rejected_and_stage_stays(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "approve_spike",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "approve_spike"
+            ),
         )
         assert snap.stage is ParentStage.INTAKE
         await handle.signal(
@@ -84,8 +87,9 @@ async def test_wrong_stage_signals_are_rejected_and_stage_stays(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "lock_scope",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "lock_scope"
+            ),
         )
         assert snap.stage is ParentStage.SCOPE_LOCKED
     finally:
@@ -101,8 +105,9 @@ async def test_illegal_payload_is_rejected_and_workflow_keeps_running(
         await handle.signal(DevPipelineWorkflow.lock_scope, {"out_of_scope": "only"})
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "lock_scope",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "lock_scope"
+            ),
         )
         assert snap.stage is ParentStage.INTAKE
         assert "必填" in (snap.last_rejection.reason if snap.last_rejection else "")
@@ -119,7 +124,7 @@ async def test_illegal_payload_is_rejected_and_workflow_keeps_running(
 async def test_review_override_rejects_unknown_or_non_gate_ticket(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.hold("implement", "A")
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -132,8 +137,9 @@ async def test_review_override_rejects_unknown_or_non_gate_ticket(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "review_override",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "review_override"
+            ),
         )
         assert snap.stage is ParentStage.IMPLEMENTING
         assert "未知 Ticket" in snap.last_rejection.reason
@@ -143,8 +149,9 @@ async def test_review_override_rejects_unknown_or_non_gate_ticket(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and "不在 HumanGate" in item.last_rejection.reason,
+            lambda item: (
+                item.last_rejection is not None and "不在 HumanGate" in item.last_rejection.reason
+            ),
         )
         assert snap.stage is ParentStage.IMPLEMENTING
     finally:
@@ -154,7 +161,7 @@ async def test_review_override_rejects_unknown_or_non_gate_ticket(
 async def test_promote_rule_schema_error_differs_from_automatic_refusal(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.hold("implement", "A")
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -167,16 +174,18 @@ async def test_promote_rule_schema_error_differs_from_automatic_refusal(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.promote_rule_status is not None
-            and "拒绝" in (item.promote_rule_status or ""),
+            lambda item: (
+                item.promote_rule_status is not None and "拒绝" in (item.promote_rule_status or "")
+            ),
         )
         assert snap.last_rejection is None
         assert snap.stage is ParentStage.IMPLEMENTING
         await handle.signal(DevPipelineWorkflow.promote_rule, {"automatic": False})
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "promote_rule",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "promote_rule"
+            ),
         )
         assert "必填" in snap.last_rejection.reason
         assert snap.stage is ParentStage.IMPLEMENTING
@@ -200,9 +209,11 @@ async def test_abort_ends_execution_reopen_same_id_is_rejected(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "reopen"
-            and "新的 execution_id" in item.last_rejection.reason,
+            lambda item: (
+                item.last_rejection is not None
+                and item.last_rejection.signal == "reopen"
+                and "新的 execution_id" in item.last_rejection.reason
+            ),
         )
         assert snap.stage is ParentStage.BLOCKED
         assert snap.reopened_execution_id is None
@@ -272,9 +283,11 @@ async def test_reopen_rejects_when_target_workflow_id_exists(
         await handle.signal(DevPipelineWorkflow.reopen, ReopenRequest(execution_id=new_id))
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "reopen"
-            and "已存在" in item.last_rejection.reason,
+            lambda item: (
+                item.last_rejection is not None
+                and item.last_rejection.signal == "reopen"
+                and "已存在" in item.last_rejection.reason
+            ),
         )
         assert snap.stage is ParentStage.BLOCKED
         assert snap.reopened_execution_id is None

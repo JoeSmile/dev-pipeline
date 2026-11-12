@@ -29,8 +29,8 @@ LAG_MARKER_RETRY = RetryPolicy(
 _LAG_FALLBACK = "Jira 阶段镜像失败"
 
 
-def lag_reason_from_error(exc: BaseException) -> str:
-    """Extract a Chinese, secret-free reason from a failed mirror Activity."""
+def lag_reason_from_error(exc: BaseException, fallback: str | None = None) -> str:
+    """Extract a Chinese, secret-free reason from a failed Jira Activity."""
 
     current: BaseException | None = exc
     seen: set[int] = set()
@@ -38,10 +38,12 @@ def lag_reason_from_error(exc: BaseException) -> str:
         seen.add(id(current))
         message = getattr(current, "message", None)
         text = str(message or current)
-        if any(token in text for token in ("Jira", "jira.toml", "令牌", "无法连接", "镜像")):
+        if any(
+            token in text for token in ("Jira", "jira.toml", "令牌", "无法连接", "镜像", "写票")
+        ):
             return text
         current = getattr(current, "cause", None) or current.__cause__
-    return _LAG_FALLBACK
+    return fallback or _LAG_FALLBACK
 
 
 class ParentJiraMirrorMixin:

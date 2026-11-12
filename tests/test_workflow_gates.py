@@ -13,6 +13,7 @@ from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
     authorize_test_deploy,
+    complete_ticket,
     stage_of,
     start_parent,
     started,
@@ -28,13 +29,13 @@ from dev_pipeline.models import (
     PromoteRuleRequest,
     TicketInput,
     TicketResult,
-    TicketSpec,
     ticket_workflow_id,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.workflows import DevPipelineWorkflow, TicketWorkflow
 
 pytestmark = pytest.mark.asyncio
+
 
 def _ticket_stage(result: object) -> object:
     if isinstance(result, TicketResult):
@@ -44,19 +45,20 @@ def _ticket_stage(result: object) -> object:
     return getattr(result, "stage", None)
 
 
-
 async def test_authorize_test_deploy_is_required_before_publish_or_retro(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
         await advance_to_implementing(handle, payload)
         snap = await wait_snapshot(
             handle,
-            lambda item: item.waiting_signal is not None
-            and WAITING_AUTHORIZE_TEST_DEPLOY in item.waiting_signal,
+            lambda item: (
+                item.waiting_signal is not None
+                and WAITING_AUTHORIZE_TEST_DEPLOY in item.waiting_signal
+            ),
         )
         assert snap.stage is ParentStage.IMPLEMENTING
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
@@ -81,7 +83,7 @@ async def test_drop_ticket_unblocks_test_deploying(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.implement_errors.add("B")
@@ -90,8 +92,10 @@ async def test_drop_ticket_unblocks_test_deploying(
         await advance_to_implementing(handle, payload)
         await wait_snapshot(
             handle,
-            lambda item: stage_of(item, "A") is TicketStage.VERIFIED
-            and stage_of(item, "B") is TicketStage.FAILED,
+            lambda item: (
+                stage_of(item, "A") is TicketStage.VERIFIED
+                and stage_of(item, "B") is TicketStage.FAILED
+            ),
         )
         snap = await handle.query(DevPipelineWorkflow.snapshot)
         assert snap.waiting_signal != WAITING_AUTHORIZE_TEST_DEPLOY
@@ -148,7 +152,7 @@ async def test_direct_start_child_with_unmet_deps_stays_pending(
 async def test_retry_ticket_restarts_failed_child(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.implement_fail_remaining["A"] = 1
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -169,7 +173,7 @@ async def test_retry_ticket_restarts_failed_child(
 async def test_promote_rule_records_request_and_rejects_automatic(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
-    payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
+    payload = story(tmp_config_root, [complete_ticket("A")])
     controller = StubController()
     controller.hold("implement", "A")
     worker, handle = await start_parent(workflow_env, payload, controller)
@@ -182,8 +186,9 @@ async def test_promote_rule_records_request_and_rejects_automatic(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.promote_rule_status is not None
-            and "拒绝" in (item.promote_rule_status or ""),
+            lambda item: (
+                item.promote_rule_status is not None and "拒绝" in (item.promote_rule_status or "")
+            ),
         )
         assert snap.last_illegal is not None
         assert "拒绝" in snap.last_illegal
@@ -193,8 +198,10 @@ async def test_promote_rule_records_request_and_rejects_automatic(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.promote_rule_status is not None
-            and "已记录" in (item.promote_rule_status or ""),
+            lambda item: (
+                item.promote_rule_status is not None
+                and "已记录" in (item.promote_rule_status or "")
+            ),
         )
         assert "已记录" in (snap.promote_rule_status or "")
         controller.release("implement", "A")
@@ -210,7 +217,7 @@ async def test_abort_stops_running_children(
 ) -> None:
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.hold("implement", "A", "B")

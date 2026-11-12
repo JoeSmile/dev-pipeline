@@ -11,6 +11,7 @@ from tests.history_events import scheduled_activity_names
 from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
+    complete_ticket,
     exception_text,
     start_parent,
     started,
@@ -176,7 +177,7 @@ async def test_budget_breach_does_not_cancel_sibling_tickets(
     _write_budget(tmp_config_root, 'units = ["tokens"]\n[limits]\ntokens = 5\n')
     payload = story(
         tmp_config_root,
-        [TicketSpec(ticket_id="A"), TicketSpec(ticket_id="B")],
+        [complete_ticket("A"), complete_ticket("B")],
     )
     controller = StubController()
     controller.hold("implement", "A", "B")
