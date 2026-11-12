@@ -62,6 +62,21 @@ ACTIVITY_TIMEOUT = timedelta(seconds=60)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
 
 
+def orchestration_should_resume(state: ParentState) -> bool:
+    """True when the parent must leave the ticket wait and re-evaluate starts.
+
+    Wait may not depend only on ticket_event: if a dependency has already
+    reached Verified, the eligible Child must start even when the wake flag
+    was already cleared.
+    """
+
+    if state.ticket_event or state.abort_requested:
+        return True
+    if eligible_ticket_ids(state.specs, state.ticket_list()):
+        return True
+    return can_enter_test_deploying(state.ticket_list()) and state.test_deploy_authorized
+
+
 class ParentOrchestrationMixin:
     """Scope, spike, child start/stop, and test-deploy steps for the parent."""
 
@@ -282,9 +297,10 @@ class ParentOrchestrationMixin:
                 continue
             # Do not clear ticket_event before waiting: a child may have
             # notified during _start_eligible, and dropping that wake-up
-            # would leave dependents parked in Pending.
-            if not state.ticket_event and not state.abort_requested:
-                await workflow.wait_condition(lambda: state.ticket_event or state.abort_requested)
+            # would leave dependents parked in Pending. Also resume when a
+            # dependent is already eligible so a cleared flag cannot park it.
+            if not orchestration_should_resume(state):
+                await workflow.wait_condition(lambda: orchestration_should_resume(state))
             state.ticket_event = False
 
     async def _start_eligible(self) -> bool:

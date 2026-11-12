@@ -119,6 +119,20 @@ def test_unhandled_failure_blocks_test_deploying_and_retro() -> None:
     assert can_enter_retro(tickets, TestDeployStatus.SUCCEEDED) is False
 
 
+def test_reject_blocked_or_rework_in_flight_blocks_retro() -> None:
+    rejected = ticket_views_from_stages(
+        {"A": TicketStage.BLOCKED, "B": TicketStage.VERIFIED}
+    )
+    assert can_enter_test_deploying(rejected) is False
+    assert can_enter_retro(rejected, TestDeployStatus.SUCCEEDED) is False
+    rework = ticket_views_from_stages(
+        {"A": TicketStage.IMPLEMENTING, "B": TicketStage.VERIFIED},
+        unhandled={"A": False, "B": False},
+    )
+    assert can_enter_test_deploying(rework) is False
+    assert can_enter_retro(rework, TestDeployStatus.SUCCEEDED) is False
+
+
 def test_dropped_ticket_does_not_block_test_deploying() -> None:
     tickets = ticket_views_from_stages(
         {"A": TicketStage.VERIFIED, "B": TicketStage.DROPPED},

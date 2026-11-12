@@ -56,11 +56,13 @@ stateDiagram-v2
 - Child（`TicketWorkflow`）从 `Pending` 开始。依赖未过线时不得进入 `Implementing`（即使 Child 被直接启动）。
 - 循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。进入 Reviewing 前必须交付分支、diff、单测与回滚说明，记录在既有快照 `tickets[].deliverables` / Child `snapshot.deliverables`。缺项不得进入 Reviewing。仅建议/信息可从 `Reviewing` 直达 `Verifying`；阻断项或范式漂移必须 HumanGate，交付完成不等于 Review 通过。验证失败回到 `Implementing`。双 Review 本身见 DP-22，本骨架仍使用审查桩。
 
-## 编排规则（DP-26 最小集）
+## 编排粒度（DP-26）
+
+一条父 `DevPipelineWorkflow` 对应一张 Story；每张实现 Ticket 对应一个独立、可幂等的 Child（`TicketWorkflow`）。不另做第二套父 / Child 模型，不引入「可延后 Ticket」。
 
 - Ticket 按依赖拓扑执行：无依赖的 Ticket 可并行启动；依赖未过线的 Ticket 不得提前开工。
-- 单张 Child 失败不自动取消同 Story 其他未受影响的 Ticket。
-- 失败处理方式：对该 Ticket 重试、人工将其从清单中移除（`drop_ticket`），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`。
+- 单张 Child 失败（实现失败、验证未过线打回 Implementing、或否决进入 Blocked）不自动取消同 Story 其他未受影响的 Ticket。父执行在失败被处理前不得进入 `TestDeploying` 或 `Retro`。全部未移除的必做 Ticket 验证过线后才允许进 Retro。
+- 失败处理路径：打回重做（`review_override` 打回或验证未过线只让该 Ticket 回到 `Implementing`；已 Failed / 否决 Blocked 的票用同一次执行内的 `retry_ticket`）、人工放弃并改清单（`drop_ticket`；`submit_tickets` 只用于 TicketsReady 补齐清单，清单齐后不能再用它改写清单），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`；这不是单张失败后的自动取消。
 - 幂等键：`ticket_id+execution_id`（`ticket_workflow_id`，同时用作 Child workflow id）。Child 启动使用 `REJECT_DUPLICATE`，第二次启动会附着到已有 execution，而不是再开一个 Child。
   - 同键、仍在进行中：视为重入，不创建第二份副作用（工作区 / 分支 / PR 声明）。
   - 同键、已完成：返回已有结果，不开新分支 / PR / worktree。

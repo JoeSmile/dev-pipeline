@@ -203,6 +203,18 @@ async def test_one_child_failure_does_not_cancel_sibling_and_blocks_retro(
         )
         assert snap.stage is ParentStage.IMPLEMENTING
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
+        assert snap.waiting_signal == "retry_ticket_or_drop_ticket_or_abort"
+        await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
+        snap = await wait_snapshot(
+            handle,
+            lambda item: (
+                item.last_rejection is not None
+                and item.last_rejection.signal == "authorize_test_deploy"
+            ),
+        )
+        assert snap.stage is ParentStage.IMPLEMENTING
+        assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
+        assert "失败尚未处理" in (snap.last_rejection.reason if snap.last_rejection else "")
         await handle.signal(DevPipelineWorkflow.drop_ticket, "A")
         await authorize_test_deploy(handle)
         result = await wait_terminal(handle)
