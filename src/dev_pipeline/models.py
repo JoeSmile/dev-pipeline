@@ -8,6 +8,7 @@ from typing import Literal
 
 from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
+from dev_pipeline.progress import ProgressSnapshot
 from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.review import DualReviewRecord
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
@@ -612,6 +613,8 @@ class PipelineSnapshot:
     jira_tickets: JiraTicketWriteSnapshot | None = None
     retro: RetroRecord | None = None
     promotion: PromotionRecord | None = None
+    last_failure_reason: str | None = None
+    progress: ProgressSnapshot | None = None
 
 
 @dataclass

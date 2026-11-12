@@ -54,7 +54,16 @@ dev-pipeline start --jira-key DP-13 --config-root D:\pipeline-config
 
 等价入口：`python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-config`。可选 `--execution-id`（省略则生成 UUID 并打印）、`--temporal-target`（默认 `localhost:7233`）、`--task-queue`（默认 `dev-pipeline`）。成功时会打印 `workflow_id`、`execution_id` 和 Jira key。父执行 id 仍是 `story_workflow_id(story_id, execution_id)`。
 
-配置根目录缺失、非法，或缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。查询 / Signal CLI 见后续 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)。
+查询同一条执行（只读，不改变状态）：
+
+```powershell
+dev-pipeline status --workflow-id story-DP-13-<execution_id> --config-root D:\pipeline-config
+```
+
+也可使用 `--jira-key DP-13 --execution-id <execution_id>`。配置根目录仍然必填，用于定位该 execution 证据目录下的进度日志，查询本身不会写文件或 Jira。
+
+
+配置根目录缺失、非法，或缺少合法 `budget.toml` 时立刻以中文错误非零退出，不会回退默认路径。Temporal 不可达、Jira key 非法、或目标 workflow id 已存在时同样可见地失败并中止，不会把失败说成「可能已存在」，也不会接入已有执行当作成功。只读查询见 `dev-pipeline status`（[DP-27](https://weiperfect007.atlassian.net/browse/DP-27)）：打印阶段、等候点、Ticket / Child 状态、已耗预算、最近失败原因、Jira 镜像是否滞后，以及当前步骤、最近心跳、过期标记「可能无响应」和有限条步骤提示。连续跟随刷新见 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)，本入口不做跟随循环。
 
 ## 把阶段镜像回 Jira（DP-14）
 
@@ -182,7 +191,7 @@ stateDiagram-v2
 7. 任何生产发布禁止。测试环境受控发布须另有明确授权。
 8. 未确认 `lock_scope` / `decide_scheme` 前不得编码。
 9. 单文件超过 2000 行视为 Review 阻断。
-10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal、各 Ticket 状态、测试部署状态、已花费预算、Jira 镜像 / 镜像滞后、已锁范围、方案取舍记录）。
+10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal 及其「正在等候你确认××」说明、各 Ticket / Child 状态、测试部署状态、已花费预算、最近失败原因、Jira 镜像 / 镜像滞后、已锁范围、方案取舍记录，以及执行中的当前步骤、最近心跳和过期标记）。心跳间隔与显示过期阈值仍为待证占位，不是已签署的 SLA。过期只标「可能无响应」，不会因此把 Workflow 判失败。
 
 优先级：数据 / 任务不丢失 > 可观测与可回放 > 人工门禁清楚 > 迭代速度 > 极致性能。
 

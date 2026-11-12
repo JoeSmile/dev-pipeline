@@ -26,6 +26,7 @@ from dev_pipeline.models import (
     TicketSnapshot,
     TicketSpec,
 )
+from dev_pipeline.progress import ProgressSnapshot, last_failure_reason, waiting_confirmation
 from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
@@ -255,12 +256,24 @@ class ParentState:
         story_id = self.input.story_id if self.input is not None else ""
         execution_id = self.input.execution_id if self.input is not None else ""
         intake = self.input.intake if self.input is not None else None
+        tickets = self.ticket_list()
+        human_gate = tuple(
+            item.ticket_id for item in tickets if item.stage is TicketStage.HUMAN_GATE
+        )
+        failures = tuple(
+            (item.ticket_id, item.stage.value, item.detail)
+            for item in tickets
+            if item.unhandled_failure or item.stage in {TicketStage.FAILED, TicketStage.BLOCKED}
+        )
+        budget = self.budget_view()
+        breach = None if budget is None or budget.last_breach is None else budget.last_breach.reason
+        waiting_text = waiting_confirmation(self.waiting, human_gate)
         return PipelineSnapshot(
             story_id=story_id,
             execution_id=execution_id,
             stage=self.stage,
             waiting_signal=self.waiting,
-            tickets=self.ticket_list(),
+            tickets=tickets,
             test_deploy_status=self.test_deploy_status,
             blocked_reason=self.blocked_reason,
             last_illegal=self.last_illegal,
@@ -269,7 +282,7 @@ class ParentState:
             test_deploy_address=self.test_deploy_address,
             reopened_execution_id=self.reopened_execution_id,
             reopen_status=self.reopen_status,
-            budget=self.budget_view(),
+            budget=budget,
             intake=intake,
             jira_mirror=self.jira_mirror,
             story_draft=self.story_draft,
@@ -282,4 +295,11 @@ class ParentState:
             jira_tickets=self.jira_tickets,
             retro=self.retro,
             promotion=self.promotion,
+            last_failure_reason=last_failure_reason(
+                blocked_reason=self.blocked_reason,
+                ticket_failures=failures,
+                budget_stop=None if budget is None else budget.last_stop_reason,
+                budget_breach_reason=breach,
+            ),
+            progress=ProgressSnapshot(waiting_confirmation=waiting_text),
         )

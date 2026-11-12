@@ -17,6 +17,7 @@ from dev_pipeline.models import (
     PublishResult,
     TicketWorkInput,
 )
+from dev_pipeline.progress_log import activity_progress
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace_auth import resolve_workspace_claim
 
@@ -30,15 +31,23 @@ async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
     CLI or read CURSOR_API_KEY.
     """
 
-    activity.heartbeat("producing deliverables")
-    claim = resolve_workspace_claim(payload)
-    result = produce_implement_result(payload, claim.authorized_worktree)
-    activity.logger.info(
-        "implement_ticket ticket=%s complete=%s",
-        payload.ticket_id,
-        bool(result.deliverables and result.deliverables.complete),
-    )
-    return result
+    async with activity_progress(
+        config_root=payload.config_root,
+        execution_id=payload.execution_id,
+        ticket_id=payload.ticket_id,
+        activity_name="implement_ticket",
+        initial_step="正在准备交付物",
+    ) as progress:
+        claim = resolve_workspace_claim(payload)
+        progress.update(f"正在写代码：实现{payload.ticket_id}")
+        result = produce_implement_result(payload, claim.authorized_worktree)
+        progress.update("正在收集 diff 与测试证据")
+        activity.logger.info(
+            "implement_ticket ticket=%s complete=%s",
+            payload.ticket_id,
+            bool(result.deliverables and result.deliverables.complete),
+        )
+        return result
 
 
 @activity.defn

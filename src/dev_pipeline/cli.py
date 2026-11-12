@@ -1,4 +1,4 @@
-"""Command-line entry for starting one DevPipelineWorkflow into Intake."""
+"""Command-line entry for starting and querying one DevPipelineWorkflow."""
 
 from __future__ import annotations
 
@@ -14,13 +14,24 @@ from typing import Any, NoReturn, Protocol
 import structlog
 
 from dev_pipeline.budget_config import load_budget_config_from_path
+from dev_pipeline.cli_status import (
+    StatusArgs,
+    add_status_parser,
+    run_status,
+    status_args_from_parse,
+)
 from dev_pipeline.config_root import validate_config_root_path
 from dev_pipeline.constants import (
     CLIENT_CONNECT_TIMEOUT,
     DEFAULT_TASK_QUEUE,
     DEFAULT_TEMPORAL_TARGET,
 )
-from dev_pipeline.errors import BudgetConfigError, ConfigRootError, PipelineStartError
+from dev_pipeline.errors import (
+    BudgetConfigError,
+    ConfigRootError,
+    PipelineStartError,
+    PipelineStatusError,
+)
 from dev_pipeline.intake import intake_from_cli, story_input_from_intake, validate_jira_key
 from dev_pipeline.models import StoryInput, story_workflow_id
 
@@ -32,8 +43,9 @@ _MISSING_CONFIG_ROOT = (
 _MISSING_JIRA_KEY = (
     "Jira key 是必填参数，必须是 DP 项目的 issue key，例如 DP-13。请传入 --jira-key。"
 )
-_NEED_START = (
-    "请使用子命令 start，例如: dev-pipeline start --jira-key DP-13 --config-root <绝对路径>"
+_NEED_COMMAND = (
+    "请使用子命令 start 或 status，例如: dev-pipeline start --jira-key DP-13 "
+    "--config-root <绝对路径>"
 )
 _EMPTY_EXECUTION_ID = "execution_id 不能为空。省略该参数时会自动生成，传入时必须是非空值。"
 _ALREADY_EXISTS = (
@@ -88,7 +100,7 @@ class StartResult:
     jira_key: str
 
 
-def parse_cli_args(argv: list[str] | None = None) -> StartArgs:
+def parse_cli_args(argv: list[str] | None = None) -> StartArgs | StatusArgs:
     """Parse CLI arguments. ``start``, ``--jira-key`` and ``--config-root`` are required.
 
     Args:
@@ -132,14 +144,18 @@ def parse_cli_args(argv: list[str] | None = None) -> StartArgs:
         default=DEFAULT_TASK_QUEUE,
         help=f"Task queue 名称（默认 {DEFAULT_TASK_QUEUE}）",
     )
-    return _start_args_from_parse(parser, parser.parse_args(argv))
+    add_status_parser(sub)
+    parsed = parser.parse_args(argv)
+    if parsed.command == "status":
+        return status_args_from_parse(parsed)
+    return _start_args_from_parse(parser, parsed)
 
 
 def _start_args_from_parse(parser: argparse.ArgumentParser, args: argparse.Namespace) -> StartArgs:
     """Validate required flags after argparse has parsed the command line."""
 
     if args.command != "start":
-        parser.error(_NEED_START)
+        parser.error(_NEED_COMMAND)
     if args.jira_key is None or not str(args.jira_key).strip():
         parser.error(_MISSING_JIRA_KEY)
     if args.config_root is None or not str(args.config_root).strip():
@@ -291,10 +307,13 @@ def main(argv: list[str] | None = None, *, connect: ConnectFn | None = None) -> 
 
     try:
         args = parse_cli_args(argv)
+        if isinstance(args, StatusArgs):
+            print(asyncio.run(run_status(args, connect=connect)))  # type: ignore[arg-type]
+            return
         result = asyncio.run(run_start(args, connect=connect))
     except (ConfigRootError, BudgetConfigError) as exc:
         _fail(exc, 2)
-    except PipelineStartError as exc:
+    except (PipelineStartError, PipelineStatusError) as exc:
         _fail(exc, 1)
     print(_format_success(result))
 

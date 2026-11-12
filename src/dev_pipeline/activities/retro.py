@@ -5,6 +5,7 @@ from __future__ import annotations
 import structlog
 from temporalio import activity
 
+from dev_pipeline.progress_log import activity_progress
 from dev_pipeline.retro import PromoteApplyInput, PromoteApplyResult, RetroInput, RetroResult
 from dev_pipeline.retro_backend import produce_promote_result, produce_retro_result
 
@@ -19,9 +20,14 @@ async def write_retro_record(payload: RetroInput) -> RetroResult:
     does not promote a candidate to L0 or a global Skill.
     """
 
-    activity.heartbeat("writing-retro")
-    result = produce_retro_result(payload)
-    activity.heartbeat("retro-complete")
+    async with activity_progress(
+        config_root=payload.config_root,
+        execution_id=payload.execution_id,
+        activity_name="write_retro_record",
+        initial_step="正在写入当日复盘",
+    ) as progress:
+        result = produce_retro_result(payload)
+        progress.update("正在更新 candidate")
     record = result.record
     logger.info(
         "write_retro_record story=%s daily=%s candidates=%s",

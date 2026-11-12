@@ -61,3 +61,8 @@ class JiraConfigError(ValueError):
 
 class JiraMirrorError(RuntimeError):
     """A Jira HTTP call failed; the Workflow stage must stay unchanged."""
+
+
+class PipelineStatusError(ValueError):
+    """CLI or client status query failed visibly and must not write state."""
+

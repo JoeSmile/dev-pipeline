@@ -158,4 +158,4 @@ python -m dev_pipeline.cli start --jira-key DP-13 --config-root D:\pipeline-conf
 - Cursor CLI 运行时
 - 与 `agent-platform` 的对接
 - 真实测试环境发布（目前只有拒绝生产目标的桩 Activity）
-- 进度心跳的完整实现（目前是可查询的阶段 / Ticket / 测试部署 / 预算花费快照）
+- 连续跟随刷新（[DP-28](https://weiperfect007.atlassian.net/browse/DP-28)）；只读 `dev-pipeline status` 与 Query 快照已由 [DP-27](https://weiperfect007.atlassian.net/browse/DP-27) 提供

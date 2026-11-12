@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
 from temporalio import activity
 
@@ -36,6 +37,14 @@ from dev_pipeline.models import (
     TicketWorkInput,
     WorkspaceClaim,
 )
+from dev_pipeline.progress import ProgressHeartbeat
+from dev_pipeline.progress_log import (
+    append_progress_step,
+    heartbeat_path,
+    progress_log_path,
+    resolve_execution_knowledge_root,
+    write_heartbeat_file,
+)
 from dev_pipeline.retro import RetroInput, RetroResult
 from dev_pipeline.review import ReviewWorkerReport, ReviewWorkInput, worker_report_from_legacy
 from dev_pipeline.ticket_list import (
@@ -57,16 +66,44 @@ from dev_pipeline.workspace import WorkspaceClaimStore, claim_workspace
 from dev_pipeline.workspace_auth import resolve_workspace_claim
 
 
-async def _await_gate(event: asyncio.Event) -> None:
-    """Wait for a test gate, heartbeating so workflow cancellation can land."""
+async def _await_gate(event: asyncio.Event, *, heartbeat: bool = True) -> None:
+    """Wait for a test gate, optionally heartbeating so cancellation can land."""
     while not event.is_set():
         if activity.is_cancelled():
             raise asyncio.CancelledError()
-        activity.heartbeat()
+        if heartbeat:
+            activity.heartbeat()
         try:
             await asyncio.wait_for(event.wait(), timeout=0.05)
         except TimeoutError:
             continue
+
+
+
+def _emit_stub_progress(payload: TicketWorkInput, steps: tuple[str, ...]) -> None:
+    """Synchronously record step hints and one heartbeat for stub activities."""
+
+    knowledge = resolve_execution_knowledge_root(payload.config_root)
+    log = progress_log_path(knowledge, payload.execution_id)
+    beat = heartbeat_path(knowledge, payload.execution_id)
+    now = datetime.now(UTC)
+    last = ""
+    for step in steps:
+        last = step
+        if log is not None:
+            append_progress_step(log, step, now=now)
+    if last and beat is not None:
+        stamp = write_heartbeat_file(
+            beat,
+            last,
+            now=now,
+            ticket_id=payload.ticket_id,
+            activity_name="implement_ticket",
+        )
+    else:
+        stamp = now.isoformat()
+    if last:
+        activity.heartbeat(ProgressHeartbeat(current_step=last, at=stamp, hints=[last]))
 
 
 @dataclass
@@ -74,6 +111,7 @@ class StubController:
     """Per-test switches and gates for stub activities."""
 
     implement_gate: dict[str, asyncio.Event] = field(default_factory=dict)
+    pause_heartbeat: set[str] = field(default_factory=set)
     review_gate: dict[str, asyncio.Event] = field(default_factory=dict)
     verify_gate: dict[str, asyncio.Event] = field(default_factory=dict)
     implement_errors: set[str] = field(default_factory=set)
@@ -200,7 +238,19 @@ class StubController:
                 raise RuntimeError(f"implement failed: {payload.ticket_id}")
             if payload.ticket_id in controller.implement_errors:
                 raise RuntimeError(f"implement failed: {payload.ticket_id}")
-            await _await_gate(controller.gate("implement", payload.ticket_id))
+            # Write hints before the test gate, but do not start an async
+            # session first: that delay made hold/release races flake.
+            _emit_stub_progress(
+                payload,
+                (
+                    f"正在写代码：实现{payload.ticket_id}",
+                    "正在收集 diff 与测试证据",
+                ),
+            )
+            await _await_gate(
+                controller.gate("implement", payload.ticket_id),
+                heartbeat=payload.ticket_id not in controller.pause_heartbeat,
+            )
             complete = payload.ticket_id not in controller.implement_incomplete
             deliverables = controller.implement_deliverables.get(payload.ticket_id)
             if deliverables is None:

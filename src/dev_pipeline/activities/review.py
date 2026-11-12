@@ -6,6 +6,7 @@ import structlog
 from temporalio import activity
 
 from dev_pipeline.models import TicketWorkInput
+from dev_pipeline.progress_log import ProgressSession, activity_progress
 from dev_pipeline.review import ReviewWorkerReport, ReviewWorkInput
 from dev_pipeline.review_backend import produce_review_report
 from dev_pipeline.review_cli import workspace_fingerprint
@@ -28,7 +29,17 @@ async def review_ticket(payload: ReviewWorkInput) -> ReviewWorkerReport:
     A requested write is always rejected, even inside the authorized tree.
     The Activity does not call Cursor CLI or read CURSOR_API_KEY.
     """
-    activity.heartbeat("reviewing")
+    async with activity_progress(
+        config_root=payload.config_root,
+        execution_id=payload.execution_id,
+        ticket_id=payload.ticket_id,
+        activity_name="review_ticket",
+        initial_step="正在读取 diff",
+    ) as progress:
+        return await _run_review(payload, progress)
+
+
+async def _run_review(payload: ReviewWorkInput, progress: ProgressSession) -> ReviewWorkerReport:
     claim = resolve_workspace_claim(
         TicketWorkInput(
             ticket_id=payload.ticket_id,
@@ -51,6 +62,7 @@ async def review_ticket(payload: ReviewWorkInput) -> ReviewWorkerReport:
             worker_id=payload.worker_id,
             reason=write_reason,
         )
+    progress.update("正在审查：对照 L0 与本 Story 约束")
     diff = _collect_diff(worktree)
     unchanged = (not worktree) or workspace_fingerprint(worktree) == before
     report = produce_review_report(
@@ -61,7 +73,6 @@ async def review_ticket(payload: ReviewWorkInput) -> ReviewWorkerReport:
         write_reason=write_reason,
         workspace_unchanged=unchanged,
     )
-    activity.heartbeat("review-complete")
     activity.logger.info(
         "review_ticket ticket=%s worker=%s blocking=%s",
         payload.ticket_id,

@@ -43,7 +43,9 @@ with workflow.unsafe.imports_passed_through():
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
 IMPLEMENT_TIMEOUT = timedelta(seconds=90)
 CLAIM_TIMEOUT = timedelta(seconds=10)
-HEARTBEAT_TIMEOUT = timedelta(seconds=2)
+# Display expiry is independent (待证, see progress.DEFAULT_DISPLAY_EXPIRY).
+# Keep Temporal heartbeat_timeout above the Activity heartbeat interval.
+HEARTBEAT_TIMEOUT = timedelta(seconds=15)
 IMPLEMENT_HEARTBEAT_TIMEOUT = timedelta(seconds=30)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
 CLAIM_RETRY = RetryPolicy(

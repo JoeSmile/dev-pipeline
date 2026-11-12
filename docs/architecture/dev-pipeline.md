@@ -90,7 +90,7 @@ stateDiagram-v2
 
 `lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 必填候选标识、晋升目标（L0 / 全局 Skill）、理由与证据引用；合法且已达默认条件（命中 N≥2 或一次硬近失）时写入 candidate 并记入 `snapshot.promotion`。自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
-进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。写码交付物挂在 `tickets[].deliverables`。完整心跳尚未实现。
+进度可见性（[DP-27](https://weiperfect007.atlassian.net/browse/DP-27)，细则见 [DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）挂在现有父执行 Query `snapshot` 上，不另开第二套 Query：当前阶段、正在等待的 Signal、各 Ticket / Child 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间）、[DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）、最近失败原因，以及 Jira 镜像是否滞后。执行过程快照在 `snapshot.progress`：当前步骤、最近心跳时间、心跳是否过期、最近有限条步骤提示。等候人工 Signal 时显示「正在等候你确认××」，不得显示成无响应；心跳过期只标「可能无响应」，与 Failed / Blocked / 等候 Signal 可区分，且不因显示过期就把 Workflow 判失败。步骤与心跳来自本 execution 证据目录下的 UTF-8 进度日志和 Activity heartbeat，完整进度与模型思考不得写入 History。写码交付物仍挂在 `tickets[].deliverables`。心跳间隔与显示过期阈值为待证占位。CLI `dev-pipeline status` 只读打印这些字段；连续跟随刷新是 [DP-28](https://weiperfect007.atlassian.net/browse/DP-28)，MCP / BA 视图分别是 [DP-38](https://weiperfect007.atlassian.net/browse/DP-38) 与 [DP-42](https://weiperfect007.atlassian.net/browse/DP-42)。
 
 ## 配置根目录
 
