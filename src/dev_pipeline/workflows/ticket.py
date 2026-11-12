@@ -105,4 +105,5 @@ class TicketWorkflow:
             sandbox=work.sandbox,
             deliverables=work.deliverables,
             review=work.review,
+            verify=work.verify,
         )

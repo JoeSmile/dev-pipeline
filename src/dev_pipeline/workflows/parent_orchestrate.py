@@ -11,7 +11,7 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, TemporalError
 from temporalio.workflow import ChildWorkflowCancellationType, ParentClosePolicy
 
-from dev_pipeline.constants import TEST_PUBLISH_TARGET, WAITING_AUTHORIZE_TEST_DEPLOY
+from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.models import (
     SPIKE_BROKEN,
     SPIKE_OVERRUN,
@@ -33,7 +33,7 @@ from dev_pipeline.models import (
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus
 from dev_pipeline.topology import eligible_ticket_ids
-from dev_pipeline.transitions import can_enter_test_deploying, unhandled_failures
+from dev_pipeline.transitions import can_enter_test_deploying
 from dev_pipeline.workflows.child_start import (
     CHILD_EXECUTION_TIMEOUT,
     CHILD_RETRY,
@@ -260,14 +260,7 @@ class ParentOrchestrationMixin:
         return None
 
     def _refresh_ticket_wait(self) -> None:
-        state = self._state
-        if can_enter_test_deploying(state.ticket_list()) and not state.test_deploy_authorized:
-            state.waiting = WAITING_AUTHORIZE_TEST_DEPLOY
-            return
-        if unhandled_failures(state.ticket_list()) and not state.has_in_flight():
-            state.waiting = "retry_ticket_or_drop_ticket_or_abort"
-            return
-        state.waiting = None
+        self._state.refresh_ticket_wait()
 
     async def _orchestrate_tickets(self) -> None:
         state = self._state
@@ -284,9 +277,7 @@ class ParentOrchestrationMixin:
             # notified during _start_eligible, and dropping that wake-up
             # would leave dependents parked in Pending.
             if not state.ticket_event and not state.abort_requested:
-                await workflow.wait_condition(
-                    lambda: state.ticket_event or state.abort_requested
-                )
+                await workflow.wait_condition(lambda: state.ticket_event or state.abort_requested)
             state.ticket_event = False
 
     async def _start_eligible(self) -> bool:
@@ -320,6 +311,14 @@ class ParentOrchestrationMixin:
         payload = self._state.input
         assert payload is not None
         spec = next(item for item in self._state.specs if item.ticket_id == ticket_id)
+        scheme = self._state.scheme
+        red_lines = [
+            item.statement
+            for item in (scheme.hypotheses if scheme is not None else [])
+            if item.grade == "红线级" and item.statement.strip()
+        ]
+        scope = self._state.scope
+        constraints = scope.in_scope.strip() if scope is not None else ""
         handle, _started = await start_or_attach_ticket_child(
             TicketInput(
                 ticket_id=ticket_id,
@@ -329,6 +328,8 @@ class ParentOrchestrationMixin:
                 parent_workflow_id=workflow.info().workflow_id,
                 depends_on=list(spec.depends_on),
                 sandbox_write=payload.sandbox_write,
+                scheme_red_lines=red_lines,
+                story_constraints=constraints,
             ),
             parent_close_policy=ParentClosePolicy.TERMINATE,
             cancellation_type=ChildWorkflowCancellationType.TRY_CANCEL,

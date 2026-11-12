@@ -134,7 +134,7 @@ stateDiagram-v2
 | Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环；全部未移除 Ticket 过线后等候 authorize_test_deploy |
 | Reviewing | diff + L0 + 本 Story 局部约束 | 双 Agent 并行：阻断 / 建议 / 信息 + 引用规则条文；无新证据就停 |
 | HumanGate | 仅阻断项或跨模块/范式漂移 | 放行 / 打回 / 否决（`review_override`）；决策写入 `tickets[].review.override`（人、动作、时间、可选理由）。未出 Signal 之前不自动越过，无超时自动放行（超时策略本期 OOS） |
-| Verifying | 验收步骤 + L0 红线 | 「红线 ↔ 证据」至少一行；命令/现象可复现。全部未移除 Ticket 过线且已授权后，由父执行从聚合 `Implementing` 进入 `TestDeploying`，而不是直接 Retro |
+| Verifying | 验收步骤 + L0 红线 / 本 Story 局部约束 / 方案红线级假设 | 「红线 ↔ 证据」至少一行，命令/现象可复现，证据写入授权 worktree（UTF-8，字段见 DP-32），记录在 `snapshot.verify`。dry-run 或仅 History 不能标 PASS。未守住红线只打回该 Ticket 到 Implementing。全部未移除 Ticket 过线且已授权后，由父执行从聚合 `Implementing` 进入 `TestDeploying`，而不是直接 Retro |
 | TestDeploying | 全部未移除 Ticket 已验证过线，且已收到 `authorize_test_deploy` | 测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
 | Retro | 当日证据（git、Jira、Codex session、评审）与成功的测试部署 | `docs/knowledge/daily/YYYY-MM-DD.md`；candidate 更新；全局草案等签批 |
 

@@ -12,9 +12,9 @@ from dev_pipeline.activities.story_draft import normalize_story_draft
 from dev_pipeline.activities.stubs import (
     implement_ticket,
     publish_to_test_env,
-    verify_ticket,
     write_retro_record,
 )
+from dev_pipeline.activities.verify import verify_ticket
 from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 STUB_ACTIVITIES = (

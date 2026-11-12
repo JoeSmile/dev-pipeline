@@ -35,6 +35,7 @@ class ParentChildSignalMixin:
             snap.unhandled_failure = False
             snap.stage = TicketStage.DROPPED
             self._state.ticket_event = True
+            self._state.refresh_ticket_wait()
         await self._route_to_child(ticket_id, "drop_ticket")
 
     @workflow.signal
@@ -48,6 +49,7 @@ class ParentChildSignalMixin:
         snap.sandbox = update.sandbox
         snap.deliverables = update.deliverables
         snap.review = update.review
+        snap.verify = update.verify
         # A Pending notify only means the Child exists; work has not started.
         if update.stage is not TicketStage.PENDING:
             snap.started = True
@@ -56,6 +58,7 @@ class ParentChildSignalMixin:
         else:
             snap.unhandled_failure = update.unhandled_failure
         self._state.ticket_event = True
+        self._state.refresh_ticket_wait()
 
     async def _route_to_child(
         self, ticket_id: str, signal_name: str, payload: object | None = None

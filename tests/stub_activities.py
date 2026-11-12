@@ -35,7 +35,6 @@ from dev_pipeline.models import (
     StoryDraftInput,
     TicketDeliverables,
     TicketWorkInput,
-    VerifyResult,
     WorkspaceClaim,
 )
 from dev_pipeline.review import ReviewWorkerReport, ReviewWorkInput, worker_report_from_legacy
@@ -45,6 +44,15 @@ from dev_pipeline.ticket_list import (
     persist_tickets,
 )
 from dev_pipeline.transitions import validate_publish_target
+from dev_pipeline.verify import (
+    CITATION_REPRODUCIBLE_EVIDENCE,
+    RESULT_BROKEN,
+    RESULT_HELD,
+    VerifyEvidenceLine,
+    VerifyRecord,
+    VerifyResult,
+    VerifyWorkInput,
+)
 from dev_pipeline.workspace import WorkspaceClaimStore, claim_workspace
 from dev_pipeline.workspace_auth import resolve_workspace_claim
 
@@ -70,9 +78,7 @@ class StubController:
     verify_gate: dict[str, asyncio.Event] = field(default_factory=dict)
     implement_errors: set[str] = field(default_factory=set)
     review_findings: dict[str, ReviewFindings] = field(default_factory=dict)
-    review_findings_by_worker: dict[str, dict[str, ReviewFindings]] = field(
-        default_factory=dict
-    )
+    review_findings_by_worker: dict[str, dict[str, ReviewFindings]] = field(default_factory=dict)
     verify_passed: dict[str, bool] = field(default_factory=dict)
     spike_red_line: bool = False
     spike_has_protection: bool = False
@@ -230,10 +236,28 @@ class StubController:
             )
 
         @activity.defn(name="verify_ticket")
-        async def verify_ticket(payload: TicketWorkInput) -> VerifyResult:
+        async def verify_ticket(payload: VerifyWorkInput) -> VerifyResult:
             await _await_gate(controller.gate("verify", payload.ticket_id))
             passed = controller.verify_passed.get(payload.ticket_id, True)
-            return VerifyResult(passed=passed, evidence="test-evidence")
+            result_label = RESULT_HELD if passed else RESULT_BROKEN
+            record = VerifyRecord(
+                ticket_id=payload.ticket_id,
+                execution_id=payload.execution_id,
+                story_id=payload.story_id,
+                passed=passed,
+                evidence_path="",
+                reason="test-evidence",
+                lines=[
+                    VerifyEvidenceLine(
+                        red_line=CITATION_REPRODUCIBLE_EVIDENCE,
+                        command_or_phenomenon="test-evidence",
+                        result=result_label,
+                        evidence_path="",
+                    )
+                ],
+                backend="桩",
+            )
+            return VerifyResult(passed=passed, evidence="test-evidence", record=record)
 
         @activity.defn(name="publish_to_test_env")
         async def publish_to_test_env(request: PublishRequest) -> PublishResult:

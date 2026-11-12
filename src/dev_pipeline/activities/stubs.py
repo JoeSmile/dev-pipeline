@@ -1,10 +1,11 @@
 """Deterministic stub and coding activities used by the local worker.
 
-Verify, publish, and retro remain stubs: they do not call LLMs or
-talk to external systems. ``implement_ticket`` writes only inside an
-authorized worktree and does not call Cursor CLI. Dual review lives in
-``activities.review`` and uses a deterministic backend, not a live CLI.
-Tests may register replacements with the same activity names.
+Publish and retro remain stubs: they do not call LLMs or talk to
+external systems. ``implement_ticket`` writes only inside an authorized
+worktree and does not call Cursor CLI. Dual review lives in
+``activities.review`` and verification lives in ``activities.verify``;
+both use a deterministic backend, not a live CLI. Tests may register
+replacements with the same activity names.
 """
 
 from temporalio import activity
@@ -17,7 +18,6 @@ from dev_pipeline.models import (
     RetroInput,
     RetroResult,
     TicketWorkInput,
-    VerifyResult,
 )
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace_auth import resolve_workspace_claim
@@ -41,14 +41,6 @@ async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
         bool(result.deliverables and result.deliverables.complete),
     )
     return result
-
-
-@activity.defn
-async def verify_ticket(payload: TicketWorkInput) -> VerifyResult:
-    """Default verify stub: pass with a placeholder evidence line."""
-
-    activity.logger.info("stub verify_ticket ticket=%s", payload.ticket_id)
-    return VerifyResult(passed=True, evidence="stub-verify: red-line placeholder")
 
 
 @activity.defn

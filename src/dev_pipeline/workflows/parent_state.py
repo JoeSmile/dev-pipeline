@@ -9,6 +9,7 @@ from dev_pipeline.budget import (
     BudgetSnapshot,
     build_budget_snapshot,
 )
+from dev_pipeline.constants import WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.jira_mirror import LAG_MARKER_LABEL
 from dev_pipeline.models import (
     JiraMirrorSnapshot,
@@ -27,7 +28,12 @@ from dev_pipeline.models import (
 )
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
-from dev_pipeline.transitions import ParentGuardContext, assert_legal_transition
+from dev_pipeline.transitions import (
+    ParentGuardContext,
+    assert_legal_transition,
+    can_enter_test_deploying,
+    unhandled_failures,
+)
 
 
 class ParentState:
@@ -120,6 +126,16 @@ class ParentState:
             not item.unhandled_failure and item.stage in IN_FLIGHT_TICKET_STAGES
             for item in self.ticket_list()
         )
+
+    def refresh_ticket_wait(self) -> None:
+        """Update waiting_signal from the current ticket list and deploy flag."""
+        if can_enter_test_deploying(self.ticket_list()) and not self.test_deploy_authorized:
+            self.waiting = WAITING_AUTHORIZE_TEST_DEPLOY
+            return
+        if unhandled_failures(self.ticket_list()) and not self.has_in_flight():
+            self.waiting = "retry_ticket_or_drop_ticket_or_abort"
+            return
+        self.waiting = None
 
     def move(self, dest: ParentStage, trigger: str) -> None:
         """Apply a legal parent transition, or no-op when already at dest."""

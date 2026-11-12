@@ -10,6 +10,7 @@ from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.review import DualReviewRecord
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
+from dev_pipeline.verify import VerifyRecord
 
 ReviewDecision = Literal["approve", "rework", "reject"]
 PublishTarget = Literal["test"]
@@ -357,7 +358,6 @@ def missing_deliverable_fields(item: TicketDeliverables) -> list[str]:
 class TicketInput:
     """Start payload for one TicketWorkflow child."""
 
-
     ticket_id: str
     execution_id: str
     story_id: str
@@ -366,6 +366,10 @@ class TicketInput:
     depends_on: list[str] = field(default_factory=list)
     sandbox_write: SandboxWriteSpec | None = None
     review_write: SandboxWriteSpec | None = None
+    scheme_red_lines: list[str] = field(default_factory=list)
+    story_constraints: str = ""
+    verify_evidence_path: str = ""
+    verify_mode: str = ""
 
 
 @dataclass
@@ -399,14 +403,6 @@ class ReviewFindings:
     def requires_human_gate(self) -> bool:
         """Return True when review findings require a human gate."""
         return bool(self.blocking) or self.paradigm_drift
-
-
-@dataclass
-class VerifyResult:
-    """Stub verification result. Failure returns the child to Implementing."""
-
-    passed: bool = True
-    evidence: str = ""
 
 
 @dataclass
@@ -557,6 +553,7 @@ class TicketStateUpdate:
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
     review: DualReviewRecord | None = None
+    verify: VerifyRecord | None = None
 
 
 @dataclass
@@ -595,6 +592,7 @@ class TicketSnapshot:
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
     review: DualReviewRecord | None = None
+    verify: VerifyRecord | None = None
 
 
 @dataclass
@@ -660,6 +658,7 @@ class TicketResult:
     sandbox: SandboxRecord | None = None
     deliverables: TicketDeliverables | None = None
     review: DualReviewRecord | None = None
+    verify: VerifyRecord | None = None
 
 
 def ticket_workflow_id(ticket_id: str, execution_id: str) -> str:

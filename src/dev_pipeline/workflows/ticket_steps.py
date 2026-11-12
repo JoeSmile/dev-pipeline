@@ -18,7 +18,6 @@ from dev_pipeline.models import (
     TicketResult,
     TicketStateUpdate,
     TicketWorkInput,
-    VerifyResult,
     format_scope_lock_time,
     is_complete_deliverables,
 )
@@ -32,11 +31,13 @@ from dev_pipeline.review import (
 )
 from dev_pipeline.stages import TicketStage
 from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
+from dev_pipeline.verify import VerifyRecord, VerifyResult, VerifyWorkInput
 
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.review import review_ticket
     from dev_pipeline.activities.sandbox import apply_sandbox_write
-    from dev_pipeline.activities.stubs import implement_ticket, verify_ticket
+    from dev_pipeline.activities.stubs import implement_ticket
+    from dev_pipeline.activities.verify import verify_ticket
     from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
@@ -67,6 +68,7 @@ class TicketRuntime:
         self.sandbox: SandboxRecord | None = None
         self.deliverables: TicketDeliverables | None = None
         self.review: DualReviewRecord | None = None
+        self.verify: VerifyRecord | None = None
 
     def stopped(self) -> bool:
         """Return True when the child should leave the work loop."""
@@ -79,9 +81,7 @@ class TicketRuntime:
     def move(self, dest: TicketStage, trigger: str) -> None:
         """Apply a legal child transition, including the dependency guard."""
         ctx = ChildGuardContext(dependencies_verified=self.dependencies_verified)
-        assert_legal_transition(
-            self.stage.value, dest.value, trigger, scope="child", ctx=ctx
-        )
+        assert_legal_transition(self.stage.value, dest.value, trigger, scope="child", ctx=ctx)
         self.stage = dest
 
     def work_input(self) -> TicketWorkInput:
@@ -105,6 +105,7 @@ class TicketRuntime:
             sandbox=self.sandbox,
             deliverables=self.deliverables,
             review=self.review,
+            verify=self.verify,
         )
 
 
@@ -124,6 +125,7 @@ async def notify_parent(runtime: TicketRuntime, *, unhandled_failure: bool = Fal
             sandbox=runtime.sandbox,
             deliverables=runtime.deliverables,
             review=runtime.review,
+            verify=runtime.verify,
         ),
     )
 
@@ -135,18 +137,14 @@ async def wait_until_eligible(runtime: TicketRuntime) -> bool:
         True when the child may enter Implementing.
     """
     if not runtime.dependencies_verified and not runtime.stopped():
-        await workflow.wait_condition(
-            lambda: runtime.dependencies_verified or runtime.stopped()
-        )
+        await workflow.wait_condition(lambda: runtime.dependencies_verified or runtime.stopped())
     return runtime.dependencies_verified and not runtime.stopped()
 
 
 async def wait_for_retry_or_stop(runtime: TicketRuntime) -> None:
     """Park a failed or blocked ticket until retry, drop, or abort."""
     runtime.retry_requested = False
-    await workflow.wait_condition(
-        lambda: runtime.retry_requested or runtime.stopped()
-    )
+    await workflow.wait_condition(lambda: runtime.retry_requested or runtime.stopped())
     runtime.retry_requested = False
 
 
@@ -279,9 +277,8 @@ async def run_human_gate(runtime: TicketRuntime) -> None:
     decided_at = override.decided_at.strip() or format_scope_lock_time(workflow.now())
     action = review_decision_label(override.decision)
     record = ReviewOverrideRecord(
-        ticket_id=override.ticket_id or (
-            runtime.input.ticket_id if runtime.input is not None else ""
-        ),
+        ticket_id=override.ticket_id
+        or (runtime.input.ticket_id if runtime.input is not None else ""),
         decision=override.decision,
         action=action,
         decided_by=override.decided_by,
@@ -307,16 +304,32 @@ async def run_human_gate(runtime: TicketRuntime) -> None:
 
 
 async def run_verify(runtime: TicketRuntime) -> bool:
-    """Run the verify stub. Return True when the ticket passed."""
+    """Run verification in the authorized worktree. Return True when it passed."""
+    assert runtime.input is not None
+    work = runtime.work_input()
+    tree = ""
+    if runtime.sandbox is not None:
+        tree = runtime.sandbox.authorized_worktree
     result: VerifyResult = await workflow.execute_activity(
         verify_ticket,
-        runtime.work_input(),
+        VerifyWorkInput(
+            ticket_id=work.ticket_id,
+            execution_id=work.execution_id,
+            story_id=work.story_id,
+            config_root=work.config_root,
+            authorized_worktree=tree,
+            scheme_red_lines=list(runtime.input.scheme_red_lines),
+            story_constraints=runtime.input.story_constraints,
+            evidence_path=runtime.input.verify_evidence_path,
+            mode=runtime.input.verify_mode,
+        ),
         start_to_close_timeout=ACTIVITY_TIMEOUT,
         heartbeat_timeout=HEARTBEAT_TIMEOUT,
         retry_policy=NO_RETRY,
     )
     if runtime.stopped():
         return False
+    runtime.verify = result.record
     runtime.detail = result.evidence
     return result.passed
 
