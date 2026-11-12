@@ -14,9 +14,11 @@ README_PARENT_EDGES: frozenset[tuple[str, str, str]] = frozenset(
         ("ScopeLocked", "SchemeDecided", "decide_scheme"),
         ("SchemeDecided", "Spike", "high_risk_assumption"),
         ("SchemeDecided", "TicketsReady", "no_high_risk_assumption"),
+        ("Spike", "TicketsReady", "spike_verified"),
         ("Spike", "TicketsReady", "approve_spike_accept"),
         ("Spike", "Blocked", "approve_spike_reject"),
         ("Spike", "Blocked", "red_line_fail"),
+        ("Spike", "Blocked", "spike_overrun"),
         ("TicketsReady", "Implementing", "start_eligible_children"),
         ("Implementing", "TestDeploying", "authorize_test_deploy"),
         ("TestDeploying", "Retro", "test_deploy_success"),
@@ -65,9 +67,7 @@ def ticket_views_from_stages(
             stage=stage,
             depends_on=list(depends_on.get(ticket_id, ())),
             started=stage is not TicketStage.PENDING,
-            unhandled_failure=unhandled.get(
-                ticket_id, stage in TERMINAL_FAILURE_TICKET_STAGES
-            ),
+            unhandled_failure=unhandled.get(ticket_id, stage in TERMINAL_FAILURE_TICKET_STAGES),
         )
         for ticket_id, stage in stages.items()
     )

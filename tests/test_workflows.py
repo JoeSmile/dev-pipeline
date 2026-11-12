@@ -75,8 +75,10 @@ async def test_sibling_in_reviewing_blocks_parent_test_deploy_and_retro(
         await advance_to_implementing(handle, payload)
         snap = await wait_snapshot(
             handle,
-            lambda item: stage_of(item, "A") is TicketStage.VERIFIED
-            and stage_of(item, "B") is TicketStage.REVIEWING,
+            lambda item: (
+                stage_of(item, "A") is TicketStage.VERIFIED
+                and stage_of(item, "B") is TicketStage.REVIEWING
+            ),
         )
         assert snap.stage is ParentStage.IMPLEMENTING
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
@@ -193,8 +195,10 @@ async def test_one_child_failure_does_not_cancel_sibling_and_blocks_retro(
         controller.release("implement", "B")
         snap = await wait_snapshot(
             handle,
-            lambda item: stage_of(item, "B") is TicketStage.VERIFIED
-            and stage_of(item, "A") is TicketStage.FAILED,
+            lambda item: (
+                stage_of(item, "B") is TicketStage.VERIFIED
+                and stage_of(item, "A") is TicketStage.FAILED
+            ),
         )
         assert snap.stage is ParentStage.IMPLEMENTING
         assert snap.test_deploy_status is TestDeployStatus.NOT_STARTED
@@ -305,6 +309,8 @@ async def test_spike_reject_blocks(
 ) -> None:
     payload = story(tmp_config_root, [TicketSpec(ticket_id="A")])
     controller = StubController()
+    controller.spike_red_line = True
+    controller.spike_has_protection = True
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
         await handle.signal(
@@ -316,7 +322,10 @@ async def test_spike_reject_blocks(
             DevPipelineWorkflow.decide_scheme,
             scheme_decision(payload, high_risk=True),
         )
-        await wait_snapshot(handle, lambda item: item.stage is ParentStage.SPIKE)
+        await wait_snapshot(
+            handle,
+            lambda item: item.stage is ParentStage.SPIKE and item.waiting_signal == "approve_spike",
+        )
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=False))
         result = await wait_terminal(handle)
         assert result.stage is ParentStage.BLOCKED

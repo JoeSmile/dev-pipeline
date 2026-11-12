@@ -77,8 +77,8 @@ stateDiagram-v2
     ScopeLocked --> SchemeDecided: 方案取舍已拍
     SchemeDecided --> Spike: 假设可能击穿 L0
     SchemeDecided --> TicketsReady: 无高危假设
-    Spike --> TicketsReady: 最小验证过
-    Spike --> Blocked: 击穿红线且无防护
+    Spike --> TicketsReady: 验证过 / 有防护且 approve_spike
+    Spike --> Blocked: 击穿红线且无防护 / 超时未验证 / approve_spike 拒绝
     TicketsReady --> Implementing: 派 Coding Worker（Child）
     Implementing --> TestDeploying: 全部未移除 Ticket 过线且已授权测试发布
     TestDeploying --> Retro: 测试环境发布成功
@@ -129,7 +129,7 @@ stateDiagram-v2
 | Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿（`snapshot.story_draft`：要解决什么、已知约束、缺项列表）；缺项标 `待证`，无臆造验收。草稿是 `lock_scope` 的输入，本阶段不锁范围 |
 | ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么已写入执行记录（含锁定人、时间），可供 Query 与 `reopen` 只读继承；禁止未锁范围就开编码 |
 | SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录（`snapshot.scheme`：取舍说明、假设清单分级为红线级 / 局部 / 候选、拍板人、时间、检索为桩或真实命中）；无红线级可直达 TicketsReady |
-| Spike（可选） | 红线级假设 | 半小时～半天可证伪结果；失败则 Blocked 或补防护 |
+| Spike（可选） | 红线级假设 | 可证伪结论写入 `snapshot.spike`；时限由可选 `spike.toml` 配置（缺省为待证占位，示例为半小时～半天中的 4 小时）。验证过则进 TicketsReady；击穿红线且无防护，或超时未验证，进入 Blocked；有防护时须经 `approve_spike` 才能进 TicketsReady。过线后不直接 Implementing，不派 Coding Child |
 | TicketsReady | 已拍方案 | Ticket 清单：目标、验收、依赖、I/O 契约 |
 | Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环；全部未移除 Ticket 过线后等候 authorize_test_deploy |
 | Reviewing | diff + L0 + 本 Story 局部约束 | 双 Agent 并行：阻断 / 建议 / 信息 + 引用规则条文；无新证据就停 |
@@ -143,7 +143,7 @@ stateDiagram-v2
 人只出现在这些点：
 
 - `lock_scope` / `decide_scheme`：锁范围、拍方案
-- `approve_spike`：高危假设是否接受防护后继续
+- `approve_spike`：击穿红线且已有防护时，是否接受防护后继续；验证过或无防护失败时不使用该 Signal
 - `review_override`：阻断项或范式漂移放行/打回/否决
 - `authorize_test_deploy`：全部未移除 Ticket 过线后，确认测试环境发布
 - `promote_rule`：候选升 L0 / 全局 Skill（默认禁止自动升；本骨架仅记录请求，自动晋升一律拒绝）
@@ -160,7 +160,7 @@ stateDiagram-v2
 |---|---|---|---|---|
 | `lock_scope` | `ScopeLock` | `in_scope`、`out_of_scope`、`locked_by` | Intake | 缺字段、类型错误、范围已锁或只读继承后、阶段不对。`locked_at` 由工作流写入，不取自 payload |
 | `decide_scheme` | `SchemeDecision` | `tradeoff`、`hypotheses`（分级：红线级 / 局部 / 候选）、`decided_by` | ScopeLocked | 缺字段、类型错误、未知分级、布尔值与分级冲突、已拍过、阶段不对（含未锁范围）。`decided_at` 由工作流写入，不取自 payload。检索标记本票记为 `桩`。无红线级假设进入 TicketsReady；有红线级假设进入 Spike |
-| `approve_spike` | `ApproveSpikeRequest` | `accepted` | Spike | 缺字段、类型错误、已决定、阶段不对 |
+| `approve_spike` | `ApproveSpikeRequest` | `accepted` | Spike，且正在等候防护批准 | 缺字段、类型错误、已决定、阶段不对、验证过或无需防护时尚未/不再等候批准 |
 | `review_override` | `ReviewOverride` | `ticket_id`、`decision`（`approve` / `rework` / `reject`） | 对应 Child 处于 HumanGate | 缺字段、类型错误、未知 Ticket、不在 HumanGate |
 | `authorize_test_deploy` | `AuthorizeTestDeployRequest`（无必填字段） | （无） | Implementing，且全部未移除 Ticket 已过线 | 阶段不对，或尚有 Ticket 未过线 / 失败未处理 |
 | `promote_rule` | `PromoteRuleRequest` | `rule_name` | 运行中任意阶段 | schema 错误记入 `last_rejection`；`automatic=true` 时 Signal 已接收，但晋升动作被拒绝并记录 |

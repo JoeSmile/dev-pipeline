@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
@@ -12,15 +13,23 @@ from temporalio.workflow import ChildWorkflowCancellationType, ParentClosePolicy
 
 from dev_pipeline.constants import TEST_PUBLISH_TARGET, WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.models import (
+    SPIKE_BROKEN,
+    SPIKE_OVERRUN,
+    SPIKE_VERIFIED,
     PipelineResult,
     PublishRequest,
     PublishResult,
     RetroInput,
     ScopeLock,
+    SpikeInput,
+    SpikeRecord,
+    SpikeResult,
     StoryDraftInput,
     StoryInput,
     TicketInput,
+    format_scope_lock_time,
     is_complete_scope_lock,
+    red_line_statements,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus
 from dev_pipeline.topology import eligible_ticket_ids
@@ -38,6 +47,7 @@ from dev_pipeline.workflows.ticket import TicketWorkflow
 
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.config import validate_config_root
+    from dev_pipeline.activities.spike import load_spike_config, run_spike
     from dev_pipeline.activities.story_draft import normalize_story_draft
     from dev_pipeline.activities.stubs import publish_to_test_env, write_retro_record
 
@@ -126,9 +136,31 @@ class ParentOrchestrationMixin:
         state.waiting = None
 
     async def _enter_optional_spike(self) -> PipelineResult | None:
-        """Enter optional Spike and wait. Spike 跑法 itself is DP-18."""
+        """Run the optional Spike and apply the falsifiable-conclusion gate."""
         state = self._state
         await self._move(ParentStage.SPIKE, "high_risk_assumption")
+        state.waiting = None
+        blocked = await self._run_spike_and_record()
+        if blocked is not None or state.abort_requested:
+            return blocked
+        assert state.spike is not None
+        if state.spike.conclusion == SPIKE_VERIFIED:
+            await self._move(ParentStage.TICKETS_READY, "spike_verified")
+            state.waiting = None
+            return None
+        if state.spike.conclusion in {SPIKE_BROKEN, SPIKE_OVERRUN} and not (
+            state.spike.has_protection
+        ):
+            trigger = "spike_overrun" if state.spike.timed_out else "red_line_fail"
+            reason = (
+                "Spike 超时未验证，按无防护处理"
+                if state.spike.timed_out
+                else "Spike 击穿红线且无防护"
+            )
+            state.waiting = None
+            state.blocked_reason = reason
+            await self._move(ParentStage.BLOCKED, trigger)
+            return await self._finish_terminal(state.finish_blocked(reason))
         state.waiting = "approve_spike"
         await workflow.wait_condition(
             lambda: state.spike_accepted is not None or state.abort_requested
@@ -136,10 +168,97 @@ class ParentOrchestrationMixin:
         if state.abort_requested:
             return await self._block(state.abort_reason)
         if state.spike_accepted is False:
+            reason = "approve_spike 拒绝"
+            state.waiting = None
+            state.blocked_reason = reason
             await self._move(ParentStage.BLOCKED, "approve_spike_reject")
-            return await self._finish_terminal(state.finish_blocked("approve_spike 拒绝"))
-        await self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
+            return await self._finish_terminal(state.finish_blocked(reason))
         state.waiting = None
+        await self._move(ParentStage.TICKETS_READY, "approve_spike_accept")
+        return None
+
+    async def _run_spike_and_record(self) -> PipelineResult | None:
+        """Execute the spike activity within the configured duration bound."""
+        state = self._state
+        payload = state.input
+        assert payload is not None
+        scheme = state.scheme
+        assert scheme is not None
+        statement = red_line_statements(list(scheme.hypotheses))
+        config = await workflow.execute_activity(
+            load_spike_config,
+            payload.config_root,
+            start_to_close_timeout=ACTIVITY_TIMEOUT,
+            retry_policy=NO_RETRY,
+        )
+        budget = timedelta(seconds=config.timeout_seconds)
+        started_at = format_scope_lock_time(workflow.now())
+        spike_input = SpikeInput(
+            story_id=payload.story_id,
+            execution_id=payload.execution_id,
+            config_root=payload.config_root,
+            statement=statement,
+            budget_seconds=config.timeout_seconds,
+        )
+        spike_task: asyncio.Task[SpikeResult] = asyncio.create_task(
+            workflow.execute_activity(
+                run_spike,
+                spike_input,
+                start_to_close_timeout=budget,
+                retry_policy=NO_RETRY,
+            )
+        )
+        abort_task = asyncio.create_task(workflow.wait_condition(lambda: state.abort_requested))
+        try:
+            await workflow.wait(
+                [spike_task, abort_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if state.abort_requested:
+                if not spike_task.done():
+                    spike_task.cancel()
+                    try:
+                        await spike_task
+                    except (asyncio.CancelledError, ActivityError):
+                        pass
+                return await self._block(state.abort_reason)
+            try:
+                result = await spike_task
+            except ActivityError:
+                state.spike = SpikeRecord(
+                    conclusion=SPIKE_OVERRUN,
+                    statement=statement,
+                    detail="Spike 超过可证伪时限，结论记为超时未验证，按无防护处理。",
+                    has_protection=False,
+                    timed_out=True,
+                    budget_seconds=config.timeout_seconds,
+                    started_at=started_at,
+                    finished_at=format_scope_lock_time(workflow.now()),
+                    backend="桩",
+                    source=config.source,
+                )
+                return None
+        finally:
+            if not abort_task.done():
+                abort_task.cancel()
+                try:
+                    await abort_task
+                except (asyncio.CancelledError, ActivityError):
+                    pass
+        broken = result.red_line_failed or result.conclusion == SPIKE_BROKEN
+        conclusion = SPIKE_BROKEN if broken else SPIKE_VERIFIED
+        state.spike = SpikeRecord(
+            conclusion=conclusion,
+            statement=result.statement.strip() or statement,
+            detail=result.detail,
+            has_protection=bool(result.has_protection) if conclusion == SPIKE_BROKEN else False,
+            timed_out=False,
+            budget_seconds=config.timeout_seconds,
+            started_at=started_at,
+            finished_at=format_scope_lock_time(workflow.now()),
+            backend=result.backend or "桩",
+            source=config.source,
+        )
         return None
 
     def _refresh_ticket_wait(self) -> None:
@@ -246,7 +365,6 @@ class ParentOrchestrationMixin:
         if self._state.stage is not ParentStage.BLOCKED:
             await self._move(ParentStage.BLOCKED, "abort")
         return await self._finish_terminal(self._state.finish_blocked(reason))
-
 
     async def _stop_children(self) -> None:
         """Signal abort and cancel every running child before the parent blocks."""

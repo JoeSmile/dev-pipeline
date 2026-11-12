@@ -70,9 +70,11 @@ PARENT_TRANSITIONS: tuple[Transition, ...] = (
         "parent",
         doc="无高危假设",
     ),
-    Transition("Spike", "TicketsReady", "approve_spike_accept", "parent", doc="最小验证过"),
+    Transition("Spike", "TicketsReady", "spike_verified", "parent", doc="验证过"),
+    Transition("Spike", "TicketsReady", "approve_spike_accept", "parent", doc="有防护且批准继续"),
     Transition("Spike", "Blocked", "approve_spike_reject", "parent", doc="拒绝高危假设"),
     Transition("Spike", "Blocked", "red_line_fail", "parent", doc="击穿红线且无防护"),
+    Transition("Spike", "Blocked", "spike_overrun", "parent", doc="超时未验证，按无防护处理"),
     Transition(
         "TicketsReady",
         "Implementing",
@@ -224,9 +226,7 @@ def can_enter_retro(
 ) -> bool:
     """Retro is legal only after a successful TestDeploying and verified tickets."""
 
-    return (
-        test_deploy_status is TestDeployStatus.SUCCEEDED and can_enter_test_deploying(tickets)
-    )
+    return test_deploy_status is TestDeployStatus.SUCCEEDED and can_enter_test_deploying(tickets)
 
 
 def unhandled_failures(tickets: Sequence[TicketSnapshot]) -> tuple[TicketSnapshot, ...]:

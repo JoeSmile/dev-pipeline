@@ -29,6 +29,10 @@ class BudgetConfigError(ValueError):
     """The required budget.toml is missing or invalid; execution must not continue."""
 
 
+class SpikeConfigError(ValueError):
+    """Optional spike.toml is present but invalid; the spike must not continue."""
+
+
 class ProductionDeployForbidden(ValueError):
     """Any production (or non-test) publish target is rejected."""
 
@@ -43,4 +47,3 @@ class JiraConfigError(ValueError):
 
 class JiraMirrorError(RuntimeError):
     """A Jira HTTP call failed; the Workflow stage must stay unchanged."""
-

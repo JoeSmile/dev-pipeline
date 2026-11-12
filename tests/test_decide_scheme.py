@@ -71,8 +71,9 @@ async def _lock(
     )
     await wait_snapshot(
         handle,  # type: ignore[arg-type]
-        lambda item: item.stage is ParentStage.SCOPE_LOCKED
-        and item.waiting_signal == "decide_scheme",
+        lambda item: (
+            item.stage is ParentStage.SCOPE_LOCKED and item.waiting_signal == "decide_scheme"
+        ),
     )
 
 
@@ -133,7 +134,7 @@ async def test_valid_decide_scheme_without_red_line_reaches_tickets_ready(
         await worker.__aexit__(None, None, None)
 
 
-async def test_valid_decide_scheme_with_red_line_enters_spike(
+async def test_valid_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
     payload = _story(tmp_config_root)
@@ -151,7 +152,11 @@ async def test_valid_decide_scheme_with_red_line_enters_spike(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.SPIKE and item.scheme is not None,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.scheme is not None
+                and item.spike is not None
+            ),
         )
         assert snap.scheme is not None
         assert snap.scheme.tradeoff == "先验证红线假设，再决定是否拆票"
@@ -160,12 +165,14 @@ async def test_valid_decide_scheme_with_red_line_enters_spike(
         assert _DECIDED_AT.match(snap.scheme.decided_at)
         assert snap.scheme.retrieval == "桩"
         assert snap.scheme.has_high_risk_assumption is True
-        assert snap.waiting_signal == "approve_spike"
+        assert snap.spike is not None
+        assert snap.spike.conclusion == "验证过"
+        assert snap.waiting_signal is None
         assert started(snap, "A") is False
         history = await handle.fetch_history()
         assert initiated_child_workflow_ids(history) == []
         assert started_child_workflow_ids(history) == []
-        assert "run_spike" not in scheduled_activity_names(history)
+        assert "run_spike" in scheduled_activity_names(history)
     finally:
         await worker.__aexit__(None, None, None)
 
@@ -180,8 +187,9 @@ async def test_missing_fields_and_invalid_grades_are_rejected(
         await handle.signal(DevPipelineWorkflow.decide_scheme, {"tradeoff": "只有取舍"})
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "decide_scheme",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "decide_scheme"
+            ),
         )
         assert snap.stage is ParentStage.SCOPE_LOCKED
         assert snap.scheme is None
@@ -197,8 +205,10 @@ async def test_missing_fields_and_invalid_grades_are_rejected(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and "红线级、局部或候选" in item.last_rejection.reason,
+            lambda item: (
+                item.last_rejection is not None
+                and "红线级、局部或候选" in item.last_rejection.reason
+            ),
         )
         assert snap.stage is ParentStage.SCOPE_LOCKED
         assert snap.scheme is None
@@ -222,8 +232,9 @@ async def test_decide_scheme_before_lock_is_rejected(
         await handle.signal(DevPipelineWorkflow.decide_scheme, scheme_decision(payload))
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "decide_scheme",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "decide_scheme"
+            ),
         )
         assert snap.stage is ParentStage.INTAKE
         assert snap.scheme is None
@@ -277,12 +288,13 @@ async def test_reopen_does_not_inherit_scheme_decision(
         )
         new_snap = await wait_snapshot(
             new_handle,
-            lambda item: item.stage is ParentStage.SCOPE_LOCKED
-            and item.waiting_signal == "decide_scheme"
-            and item.scope is not None,
+            lambda item: (
+                item.stage is ParentStage.SCOPE_LOCKED
+                and item.waiting_signal == "decide_scheme"
+                and item.scope is not None
+            ),
         )
         assert new_snap.scheme is None
         assert new_snap.execution_id == new_id
     finally:
         await worker.__aexit__(None, None, None)
-

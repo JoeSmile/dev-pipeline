@@ -23,6 +23,7 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.worker",
         "dev_pipeline.cli",
         "dev_pipeline.budget_config",
+        "dev_pipeline.spike_config",
         "dev_pipeline.jira_config",
         "dev_pipeline.jira_client",
     }
@@ -105,9 +106,7 @@ def test_workflow_modules_have_no_forbidden_imports_or_io() -> None:
                 if root in FORBIDDEN_ATTR_ROOTS and attr in FORBIDDEN_ATTR_ROOTS[root]:
                     if not _is_workflow_api(node):
                         violations.append(f"{path.name}:{node.lineno} {root}.{attr}")
-    assert violations == [], "Workflow 模块含有非法 IO/LLM/非确定性调用:\n" + "\n".join(
-        violations
-    )
+    assert violations == [], "Workflow 模块含有非法 IO/LLM/非确定性调用:\n" + "\n".join(violations)
 
 
 def test_workflow_source_does_not_mention_llm_clients() -> None:

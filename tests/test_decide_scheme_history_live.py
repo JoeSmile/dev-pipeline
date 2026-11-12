@@ -90,8 +90,9 @@ async def _lock_and_wait(handle: object) -> None:
     )
     await wait_snapshot(
         handle,  # type: ignore[arg-type]
-        lambda item: item.stage is ParentStage.SCOPE_LOCKED
-        and item.waiting_signal == "decide_scheme",
+        lambda item: (
+            item.stage is ParentStage.SCOPE_LOCKED and item.waiting_signal == "decide_scheme"
+        ),
         timeout=30.0,
     )
 
@@ -134,7 +135,7 @@ async def test_live_decide_scheme_without_red_line_reaches_tickets_ready(
         await worker.__aexit__(None, None, None)
 
 
-async def test_live_decide_scheme_with_red_line_enters_spike(
+async def test_live_decide_scheme_with_red_line_runs_spike_to_tickets_ready(
     live_client: Client, tmp_config_root: Path
 ) -> None:
     token = uuid.uuid4().hex[:8]
@@ -157,7 +158,11 @@ async def test_live_decide_scheme_with_red_line_enters_spike(
         )
         snap = await wait_snapshot(
             handle,
-            lambda item: item.stage is ParentStage.SPIKE and item.scheme is not None,
+            lambda item: (
+                item.stage is ParentStage.TICKETS_READY
+                and item.scheme is not None
+                and item.spike is not None
+            ),
             timeout=30.0,
         )
         assert snap.scheme is not None
@@ -167,11 +172,13 @@ async def test_live_decide_scheme_with_red_line_enters_spike(
         assert _DECIDED_AT.match(snap.scheme.decided_at)
         assert snap.scheme.retrieval == "桩"
         assert snap.scheme.has_high_risk_assumption is True
-        assert snap.waiting_signal == "approve_spike"
+        assert snap.spike is not None
+        assert snap.spike.conclusion == "验证过"
+        assert snap.waiting_signal is None
         assert all(not item.started for item in snap.tickets)
         history = await handle.fetch_history()
         assert "decide_scheme" in signaled_names(history)
-        assert "run_spike" not in scheduled_activity_names(history)
+        assert "run_spike" in scheduled_activity_names(history)
         assert initiated_child_workflow_ids(history) == []
         assert started_child_workflow_ids(history) == []
     finally:
@@ -193,8 +200,9 @@ async def test_live_decide_scheme_rejects_missing_fields_and_stays_scope_locked(
         await handle.signal(DevPipelineWorkflow.decide_scheme, {"tradeoff": "只有取舍"})
         snap = await wait_snapshot(
             handle,
-            lambda item: item.last_rejection is not None
-            and item.last_rejection.signal == "decide_scheme",
+            lambda item: (
+                item.last_rejection is not None and item.last_rejection.signal == "decide_scheme"
+            ),
             timeout=30.0,
         )
         assert snap.stage is ParentStage.SCOPE_LOCKED

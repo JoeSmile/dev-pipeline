@@ -18,6 +18,7 @@ from dev_pipeline.models import (
     SchemeDecision,
     ScopeLock,
     SignalRejection,
+    SpikeRecord,
     StoryDraft,
     StoryInput,
     TicketSnapshot,
@@ -36,6 +37,7 @@ class ParentState:
         self.input: StoryInput | None = None
         self.scope: ScopeLock | None = None
         self.scheme: SchemeDecision | None = None
+        self.spike: SpikeRecord | None = None
         self.spike_accepted: bool | None = None
         self.abort_requested = False
         self.abort_reason = "abort"
@@ -92,9 +94,7 @@ class ParentState:
     def ticket_list(self) -> list[TicketSnapshot]:
         """Return ticket snapshots in the installed spec order."""
         return [
-            self.tickets[spec.ticket_id]
-            for spec in self.specs
-            if spec.ticket_id in self.tickets
+            self.tickets[spec.ticket_id] for spec in self.specs if spec.ticket_id in self.tickets
         ]
 
     def guard_ctx(self) -> ParentGuardContext:
@@ -216,4 +216,5 @@ class ParentState:
             story_draft=self.story_draft,
             scope=self.scope,
             scheme=self.scheme,
+            spike=self.spike,
         )

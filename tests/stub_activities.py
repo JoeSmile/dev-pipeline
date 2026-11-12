@@ -18,12 +18,15 @@ from dev_pipeline.jira_mirror import (
     mirror_stage,
 )
 from dev_pipeline.models import (
+    SPIKE_BROKEN,
+    SPIKE_VERIFIED,
     ImplementResult,
     PublishRequest,
     PublishResult,
     RetroInput,
     RetroResult,
     ReviewFindings,
+    SpikeConfig,
     SpikeInput,
     SpikeResult,
     StoryDraft,
@@ -59,6 +62,9 @@ class StubController:
     review_findings: dict[str, ReviewFindings] = field(default_factory=dict)
     verify_passed: dict[str, bool] = field(default_factory=dict)
     spike_red_line: bool = False
+    spike_has_protection: bool = False
+    spike_hang: bool = False
+    spike_started: int = 0
     publish_succeeds: bool = True
     publish_address: str = "http://test.local/stub"
     started: list[str] = field(default_factory=list)
@@ -134,9 +140,27 @@ class StubController:
 
             return draft_story_from_intake(payload.intake, summary=payload.summary)
 
+        @activity.defn(name="load_spike_config")
+        async def load_spike_config(config_root: str) -> SpikeConfig:
+            from dev_pipeline.spike_config import load_spike_config_from_path
+
+            return load_spike_config_from_path(config_root)
+
         @activity.defn(name="run_spike")
         async def run_spike(payload: SpikeInput) -> SpikeResult:
-            return SpikeResult(red_line_failed=controller.spike_red_line, detail="test-spike")
+            controller.spike_started += 1
+            if controller.spike_hang:
+                hold = asyncio.Event()
+                await _await_gate(hold)
+            conclusion = SPIKE_BROKEN if controller.spike_red_line else SPIKE_VERIFIED
+            return SpikeResult(
+                conclusion=conclusion,
+                statement=payload.statement,
+                detail="test-spike",
+                has_protection=controller.spike_has_protection,
+                backend="桩",
+                red_line_failed=controller.spike_red_line,
+            )
 
         @activity.defn(name="claim_ticket_workspace")
         async def claim_ticket_workspace(payload: TicketWorkInput) -> WorkspaceClaim:
@@ -222,6 +246,7 @@ class StubController:
             validate_config_root,
             load_budget_config,
             normalize_story_draft,
+            load_spike_config,
             run_spike,
             claim_ticket_workspace,
             implement_ticket,

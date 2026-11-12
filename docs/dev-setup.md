@@ -24,6 +24,8 @@ New-Item -ItemType Directory -Force -Path D:\pipeline-config
 
 该目录还必须包含 `budget.toml`（可从仓库 `docs/examples/budget.toml` 复制）。文件里的限额数字均为待证占位，须经负责人签批后才视为正式限额。缺少该文件或内容非法时，Worker 与 Workflow 都会以中文错误退出，不会使用隐藏默认限额继续执行。
 
+该目录还可选包含 `spike.toml`（可从仓库 `docs/examples/spike.toml` 复制），用于配置可选 Spike 的可证伪时限（`timeout_seconds`，大于 0 的整数）。缺少该文件时使用待证占位默认 4 小时，不是已签批的正式 SLA。文件存在但内容非法时，Spike 活动会以中文错误失败，不会假装已有正式时限。
+
 ```powershell
 Copy-Item .\docs\examples\budget.toml D:\pipeline-config\budget.toml
 ```

@@ -13,21 +13,11 @@ from dev_pipeline.models import (
     RetroInput,
     RetroResult,
     ReviewFindings,
-    SpikeInput,
-    SpikeResult,
     TicketWorkInput,
     VerifyResult,
 )
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace import claim_workspace
-
-
-@activity.defn
-async def run_spike(payload: SpikeInput) -> SpikeResult:
-    """Default spike stub: no red-line failure. Tests may replace this."""
-
-    activity.logger.info("stub run_spike story=%s", payload.story_id)
-    return SpikeResult(red_line_failed=False, detail="stub-spike")
 
 
 @activity.defn

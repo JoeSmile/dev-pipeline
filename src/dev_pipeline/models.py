@@ -179,20 +179,77 @@ class SchemeDecision:
     notes: str = ""
 
 
+SpikeOutcome = Literal["验证过", "击穿红线"]
+SpikeConclusion = Literal["验证过", "击穿红线", "超时未验证"]
+SPIKE_VERIFIED: SpikeOutcome = "验证过"
+SPIKE_BROKEN: SpikeOutcome = "击穿红线"
+SPIKE_OVERRUN: SpikeConclusion = "超时未验证"
+SPIKE_BACKEND_STUB = "桩"
+# 待证占位时限：4 小时，落在票面「半小时到半天」示例窗口内，不是已签批的正式 SLA。
+DEFAULT_SPIKE_TIMEOUT_SECONDS = 4 * 60 * 60
+
+
+def red_line_statements(hypotheses: list[SchemeHypothesis]) -> str:
+    """Join 红线级 hypothesis statements into one falsifiable claim."""
+
+    statements = [
+        item.statement.strip()
+        for item in hypotheses
+        if item.grade == "红线级" and item.statement.strip()
+    ]
+    return "；".join(statements) if statements else PENDING_FIELD
+
+
+@dataclass
+class SpikeConfig:
+    """Duration bound loaded from optional spike.toml, or the 待证 default."""
+
+    timeout_seconds: int = DEFAULT_SPIKE_TIMEOUT_SECONDS
+    source: str = "待证默认"
+
+
 @dataclass
 class SpikeInput:
-    """Stub spike activity input."""
+    """Spike activity input. The runner must not write target-story code."""
 
     story_id: str
     execution_id: str
+    config_root: str = ""
+    statement: str = PENDING_FIELD
+    budget_seconds: int = DEFAULT_SPIKE_TIMEOUT_SECONDS
 
 
 @dataclass
 class SpikeResult:
-    """Stub spike activity result. A red-line failure blocks the Story."""
+    """Falsifiable spike conclusion produced by the deterministic stub backend.
 
-    red_line_failed: bool = False
+    The activity never records 超时未验证; the workflow stamps that when the
+    duration bound is exceeded. ``red_line_failed`` stays aligned with
+    ``conclusion == 击穿红线`` for older test stubs.
+    """
+
+    conclusion: SpikeOutcome = SPIKE_VERIFIED
+    statement: str = ""
     detail: str = ""
+    has_protection: bool = False
+    backend: str = SPIKE_BACKEND_STUB
+    red_line_failed: bool = False
+
+
+@dataclass
+class SpikeRecord:
+    """Queryable spike conclusion on the existing parent snapshot."""
+
+    conclusion: SpikeConclusion
+    statement: str
+    detail: str
+    has_protection: bool = False
+    timed_out: bool = False
+    budget_seconds: int = DEFAULT_SPIKE_TIMEOUT_SECONDS
+    started_at: str = ""
+    finished_at: str = ""
+    backend: str = SPIKE_BACKEND_STUB
+    source: str = "待证默认"
 
 
 @dataclass
@@ -425,6 +482,7 @@ class PipelineSnapshot:
     story_draft: StoryDraft | None = None
     scope: ScopeLock | None = None
     scheme: SchemeDecision | None = None
+    spike: SpikeRecord | None = None
 
 
 @dataclass

@@ -23,9 +23,7 @@ from dev_pipeline.stages import ParentStage, TicketStage
 from dev_pipeline.transitions import can_enter_test_deploying
 from dev_pipeline.workflows.parent_state import ParentState
 
-_REOPEN_SAME_ID = (
-    "reopen 必须使用新的 execution_id 启动新的父执行，不能在已损坏的本次执行上恢复。"
-)
+_REOPEN_SAME_ID = "reopen 必须使用新的 execution_id 启动新的父执行，不能在已损坏的本次执行上恢复。"
 _REOPEN_NOT_TERMINAL = "当前执行尚未结束，不能 reopen。请先 abort。"
 _REOPEN_IN_FLIGHT = "正在处理 reopen，请等待新执行启动完成。"
 _PROMOTE_AUTO_REJECTED = "promote_rule 自动晋升已拒绝；全局规则不得静默升级。"
@@ -92,11 +90,20 @@ class ParentSignalMixin:
         if parsed is None:
             return
         assert isinstance(parsed, ApproveSpikeRequest)
-        if self._state.spike_accepted is not None or self._state.stage is not ParentStage.SPIKE:
+        if self._state.stage is not ParentStage.SPIKE:
             self._reject(
                 "approve_spike",
                 f"非法转移: {self._state.stage.value} --approve_spike--> TicketsReady。"
                 "当前不在 Spike",
+            )
+            return
+        if self._state.spike_accepted is not None:
+            self._reject("approve_spike", "approve_spike 已决定")
+            return
+        if self._state.waiting != "approve_spike":
+            self._reject(
+                "approve_spike",
+                "当前不在等候 approve_spike：验证过或无需防护时不能批准",
             )
             return
         self._state.spike_accepted = parsed.accepted
