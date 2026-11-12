@@ -267,7 +267,10 @@ async def test_connect_uses_explicit_timeout(tmp_config_root: Path) -> None:
 
 
 async def _assert_cli_entered_intake(handle: object, result: object, execution_id: str) -> None:
-    snap = await wait_snapshot(handle, lambda item: item.stage is ParentStage.INTAKE)
+    snap = await wait_snapshot(
+        handle,
+        lambda item: item.stage is ParentStage.INTAKE and item.story_draft is not None,
+    )
     assert result.workflow_id == story_workflow_id("DP-13", execution_id)
     assert snap.story_id == "DP-13"
     assert snap.execution_id == execution_id
@@ -279,6 +282,12 @@ async def _assert_cli_entered_intake(handle: object, result: object, execution_i
     assert snap.intake.reporter == "待证"
     assert snap.intake.request == "待证"
     assert snap.intake.has_auto_run_label == "待证"
+    assert snap.story_draft is not None
+    assert snap.story_draft.to_solve == "待证"
+    assert snap.story_draft.known_constraints == "待证"
+    assert "要解决什么: 待证" in snap.story_draft.missing_items
+    assert "已知约束: 待证" in snap.story_draft.missing_items
+    assert snap.story_draft.complete is False
     history = await handle.fetch_history()
     assert workflow_execution_started_count(history) >= 1
     assert handle.id == result.workflow_id

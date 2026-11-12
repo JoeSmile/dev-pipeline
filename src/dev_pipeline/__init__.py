@@ -12,6 +12,7 @@ from dev_pipeline.models import (
     IntakeRecord,
     PipelineResult,
     PipelineSnapshot,
+    StoryDraft,
     StoryInput,
     TicketSpec,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "PipelineResult",
     "PipelineSnapshot",
     "ProductionDeployForbidden",
+    "StoryDraft",
     "StoryInput",
     "TestDeployStatus",
     "TicketSpec",

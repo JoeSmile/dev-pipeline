@@ -26,6 +26,8 @@ from dev_pipeline.models import (
     ReviewFindings,
     SpikeInput,
     SpikeResult,
+    StoryDraft,
+    StoryDraftInput,
     TicketWorkInput,
     VerifyResult,
     WorkspaceClaim,
@@ -126,6 +128,12 @@ class StubController:
 
             return load_budget_config_from_path(config_root)
 
+        @activity.defn(name="normalize_story_draft")
+        async def normalize_story_draft(payload: StoryDraftInput) -> StoryDraft:
+            from dev_pipeline.story_draft import draft_story_from_intake
+
+            return draft_story_from_intake(payload.intake, summary=payload.summary)
+
         @activity.defn(name="run_spike")
         async def run_spike(payload: SpikeInput) -> SpikeResult:
             return SpikeResult(red_line_failed=controller.spike_red_line, detail="test-spike")
@@ -213,6 +221,7 @@ class StubController:
         return (
             validate_config_root,
             load_budget_config,
+            normalize_story_draft,
             run_spike,
             claim_ticket_workspace,
             implement_ticket,

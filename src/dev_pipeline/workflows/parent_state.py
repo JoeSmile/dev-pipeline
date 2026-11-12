@@ -18,6 +18,7 @@ from dev_pipeline.models import (
     SchemeDecision,
     ScopeLock,
     SignalRejection,
+    StoryDraft,
     StoryInput,
     TicketSnapshot,
     TicketSpec,
@@ -60,6 +61,7 @@ class ParentState:
         self.budget_last_stop_reason: str | None = None
         self.costly_busy = False
         self.jira_mirror: JiraMirrorSnapshot | None = None
+        self.story_draft: StoryDraft | None = None
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -211,4 +213,5 @@ class ParentState:
             budget=self.budget_view(),
             intake=intake,
             jira_mirror=self.jira_mirror,
+            story_draft=self.story_draft,
         )

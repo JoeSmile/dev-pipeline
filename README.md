@@ -8,7 +8,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 ## 当前阶段
 
-[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，[DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 预算闸门已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。用 CLI 根据 Jira key 启动一条进入 Intake 的父执行见 [DP-13](https://weiperfect007.atlassian.net/browse/DP-13)。父执行阶段变更镜像回对应 Jira 票见 [DP-14](https://weiperfect007.atlassian.net/browse/DP-14)。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
+[DP-9](https://weiperfect007.atlassian.net/browse/DP-9) 父 Workflow 骨架、[DP-10](https://weiperfect007.atlassian.net/browse/DP-10) 人工 Signal / reopen，[DP-11](https://weiperfect007.atlassian.net/browse/DP-11) 幂等执行（键为 `ticket_id+execution_id`），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 预算闸门已按测试落地：合法阶段转移（含已锁定的 `TestDeploying`）、人工门禁，以及 [DP-26](https://weiperfect007.atlassian.net/browse/DP-26) 的最小编排规则（依赖拓扑、并行、单张失败不自动取消同胞）。用 CLI 根据 Jira key 启动一条进入 Intake 的父执行见 [DP-13](https://weiperfect007.atlassian.net/browse/DP-13)。Intake 把原始诉求整理成规范化 Story 草稿（缺项标 `待证`）见 [DP-15](https://weiperfect007.atlassian.net/browse/DP-15)。父执行阶段变更镜像回对应 Jira 票见 [DP-14](https://weiperfect007.atlassian.net/browse/DP-14)。本地开发脚手架与必填配置根目录见 [DP-29](https://weiperfect007.atlassian.net/browse/DP-29) 与 `docs/dev-setup.md`。
 
 真实 Coding / Review LLM Worker、Cursor CLI 运行时和 `agent-platform` 对接尚未实现。不要把本仓库当成整条流水线已经完成。
 
@@ -44,7 +44,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 ## 用 CLI 启动进入 Intake（DP-13）
 
-Jira 只提供 key，不当编排器。用本仓库的 CLI 显式启动一条 `DevPipelineWorkflow`，执行进入 Intake。自动按 Jira 标签开跑是 [DP-39](https://weiperfect007.atlassian.net/browse/DP-39)，本入口不实现监听器。CLI 与后续监听路径共用同一套 Intake 形状（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`）；CLI 填写 `source=cli`。
+Jira 只提供 key，不当编排器。用本仓库的 CLI 显式启动一条 `DevPipelineWorkflow`，执行进入 Intake。自动按 Jira 标签开跑是 [DP-39](https://weiperfect007.atlassian.net/browse/DP-39)，本入口不实现监听器。CLI 与后续监听路径共用同一套 Intake 形状（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`）；CLI 填写 `source=cli`。进入 Intake 后会把原始诉求整理成规范化 Story 草稿（至少包含要解决什么、已知约束、缺项列表；缺项标 `待证`，不臆造验收），挂在查询快照的 `story_draft` 上，作为后续 `lock_scope` 的输入。本阶段不锁范围、不开始编码。
 
 可复制的验收命令（先准备好已存在的配置根目录，并启动 Worker，步骤见 `docs/dev-setup.md`）：
 
@@ -126,7 +126,7 @@ stateDiagram-v2
 
 | 阶段 | 输入 | 输出（进下一阶段的硬条件） |
 |---|---|---|
-| Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿；缺项标 `待证` |
+| Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿（`snapshot.story_draft`：要解决什么、已知约束、缺项列表）；缺项标 `待证`，无臆造验收。草稿是 `lock_scope` 的输入，本阶段不锁范围 |
 | ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么；禁止未锁范围就开编码 |
 | SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录；假设清单（红线级 / 局部）；全局 vs 局部 vs 候选 |
 | Spike（可选） | 红线级假设 | 半小时～半天可证伪结果；失败则 Blocked 或补防护 |

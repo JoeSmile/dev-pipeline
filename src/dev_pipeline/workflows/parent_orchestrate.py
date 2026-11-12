@@ -18,6 +18,7 @@ from dev_pipeline.models import (
     RetroInput,
     SpikeInput,
     SpikeResult,
+    StoryDraftInput,
     StoryInput,
     TicketInput,
 )
@@ -37,6 +38,7 @@ from dev_pipeline.workflows.ticket import TicketWorkflow
 
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.config import validate_config_root
+    from dev_pipeline.activities.story_draft import normalize_story_draft
     from dev_pipeline.activities.stubs import publish_to_test_env, run_spike, write_retro_record
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
@@ -76,6 +78,17 @@ class ParentOrchestrationMixin:
     async def _wait_for_scope(self) -> None:
         state = self._state
         state.stage = ParentStage.INTAKE
+        assert state.input is not None
+        state.story_draft = await workflow.execute_activity(
+            normalize_story_draft,
+            StoryDraftInput(
+                intake=state.input.intake,
+                summary=state.input.summary,
+                config_root=state.input.config_root,
+            ),
+            start_to_close_timeout=ACTIVITY_TIMEOUT,
+            retry_policy=NO_RETRY,
+        )
         state.waiting = "lock_scope"
         await workflow.wait_condition(lambda: state.scope is not None or state.abort_requested)
         if state.abort_requested:

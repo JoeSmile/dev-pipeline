@@ -33,6 +33,31 @@ class IntakeRecord:
 
 
 @dataclass
+class StoryDraft:
+    """Normalized Story draft produced during Intake.
+
+    Missing fields are marked ``待证``. This draft is the input to
+    ``lock_scope`` (DP-16); this ticket records it and does not lock scope.
+    """
+
+    to_solve: str = PENDING_FIELD
+    known_constraints: str = PENDING_FIELD
+    missing_items: list[str] = field(default_factory=list)
+    out_of_scope: str = PENDING_FIELD
+    acceptance: str = PENDING_FIELD
+    complete: bool = False
+
+
+@dataclass
+class StoryDraftInput:
+    """Activity input for Intake story normalization. Contains no secrets."""
+
+    intake: IntakeRecord | None = None
+    summary: str = ""
+    config_root: str = ""
+
+
+@dataclass
 class TicketSpec:
     """One implementation ticket on a Story, including dependency edges.
 
@@ -314,6 +339,7 @@ class PipelineSnapshot:
     budget: BudgetSnapshot | None = None
     intake: IntakeRecord | None = None
     jira_mirror: JiraMirrorSnapshot | None = None
+    story_draft: StoryDraft | None = None
 
 
 @dataclass

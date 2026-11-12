@@ -29,7 +29,7 @@ stateDiagram-v2
     Done --> [*]
 ```
 
-- 当前验收入口是 CLI `dev-pipeline start --jira-key DP-xx --config-root <绝对路径>`，启动后进入 Intake。CLI 与后续标签监听共用 `IntakeRecord`（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`），CLI 填写 `source=cli`。Jira 不当编排器。启动失败必须可见并中止，不得说成「可能已存在」。
+- 当前验收入口是 CLI `dev-pipeline start --jira-key DP-xx --config-root <绝对路径>`，启动后进入 Intake。CLI 与后续标签监听共用 `IntakeRecord`（Jira key、提出人、原始诉求、来源、是否带自动开跑标签；缺项标 `待证`），CLI 填写 `source=cli`。进入 Intake 后，Activity `normalize_story_draft` 把原始诉求整理成规范化 Story 草稿（要解决什么、已知约束、缺项列表；缺项标 `待证`，不臆造验收），写入查询快照 `story_draft`，作为后续 `lock_scope` 的输入。本阶段不锁范围、不开始编码。Jira 不当编排器。启动失败必须可见并中止，不得说成「可能已存在」。
 - 父执行阶段变更会镜像到对应 Jira 票（默认是带前缀 `【DevPipeline 阶段镜像】` 的幂等评论；可选自定义字段名 / ID 仍为待证）。Temporal History 是真相。同步失败重试耗尽后，快照记录「镜像滞后」，并尽量在票上留下滞后标记；不得用 Jira 回写阶段。入站评论 / 字段变更不是编排指令。
 - 父执行阶段：`Intake` → `ScopeLocked` → `SchemeDecided` →（可选 `Spike`）→ `TicketsReady` → 聚合 `Implementing` → `TestDeploying` → `Retro` → `Done`，或在门禁失败 / `abort` / 测试部署失败时进入 `Blocked`。
 - 启动清单里的每张 Ticket 都是必做的。只有启动后的 `drop_ticket` 能把它从清单中移除；被移除的 Ticket 不再阻挡 `TestDeploying` / `Retro`。
@@ -72,7 +72,7 @@ stateDiagram-v2
 
 | 阶段 | 进入下一阶段的硬条件 |
 |---|---|
-| Intake | 规范化 Story 草稿，缺项标待证 |
+| Intake | 规范化 Story 草稿（`snapshot.story_draft`），缺项标待证；不锁范围 |
 | ScopeLocked | 要解决 / 不做什么已锁 |
 | SchemeDecided | 取舍记录 + 假设分级（红线 / 局部 / 候选） |
 | Spike | 高危假设有可证伪结果；失败则 Blocked 或补防护 |
