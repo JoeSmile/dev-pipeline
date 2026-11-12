@@ -20,7 +20,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 父 Workflow `DevPipelineWorkflow` 只管阶段、门禁、Jira 同步、预算与幂等。一条父执行对应一张 Story。写码、RAG、双 Review、验证是 Activity 或 Child，不把 agent loop 写进 Workflow。每张实现 Ticket 由独立、可幂等的 Child（`TicketWorkflow`，幂等键 `ticket_id + execution_id`）执行。
 
-Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。默认不自动 push / 合并。Review Worker 默认只读 diff。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
+Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。按 Ticket 在授权 worktree 内交付可审查的本地分支、diff、单测证据和回滚说明，齐了才进入 Reviewing；缺项不得进入 Reviewing。默认不自动 push / 合并，未授权时不开远程 PR。Review Worker 默认只读 diff，本阶段仍为桩，阻断项或范式漂移必须经 HumanGate。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
 
 多 Ticket 按依赖拓扑执行：无依赖可并行；有依赖的 Ticket 不得提前开工（Child 直接启动且依赖未过线时停在 `Pending`）。单张失败不自动取消同 Story 其他未受影响的 Ticket，但 Story 不能进入 `TestDeploying` 或 `Retro`，直到失败被处理（重试、人工 `drop_ticket`，或 `abort`）。
 
@@ -32,7 +32,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 - **同键、已完成**：返回已有结果，不开新分支 / PR / worktree 声明。
 - **不同 `execution_id`（含 `reopen`）**：这是新一次执行、新键。不得继跑旧 execution，也不得复用旧工作区声明。
 
-`retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`。工作区 / 分支 / PR 目前只是按该键记录的声明（不访问 git）；真实写码 Worker 与扫尾见后续票。
+`retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`。写码交付的分支名由 `ticket_id + execution_id` 推导，同键重跑复用该本地分支，不新开远程 PR、不改乱分支。未合并 worktree 的回收见 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30)（待证）。开 PR 的授权条件见 [DP-31](https://weiperfect007.atlassian.net/browse/DP-31)（待证），默认视为未授权。一期写码 Activity 调 Cursor CLI 见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留命令约定，不调用现场 CLI。
 
 ## 预算闸门（DP-12）
 

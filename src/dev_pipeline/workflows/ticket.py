@@ -101,4 +101,5 @@ class TicketWorkflow:
             stage=work.stage,
             detail=work.detail,
             sandbox=work.sandbox,
+            deliverables=work.deliverables,
         )

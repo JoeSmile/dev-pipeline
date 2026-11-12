@@ -1,11 +1,14 @@
-"""Deterministic stub activities for the parent/child skeleton.
+"""Deterministic stub and coding activities used by the local worker.
 
-These do not call LLMs, do not write files, and do not talk to external systems.
-Tests may register replacements with the same activity names.
+Review, verify, publish, and retro remain stubs: they do not call LLMs or
+talk to external systems. ``implement_ticket`` writes only inside an
+authorized worktree and does not call Cursor CLI. Tests may register
+replacements with the same activity names.
 """
 
 from temporalio import activity
 
+from dev_pipeline.deliverables import produce_implement_result
 from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
@@ -17,24 +20,27 @@ from dev_pipeline.models import (
     VerifyResult,
 )
 from dev_pipeline.transitions import validate_publish_target
-from dev_pipeline.workspace import claim_workspace
+from dev_pipeline.workspace_auth import resolve_workspace_claim
 
 
 @activity.defn
 async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
-    """Default coding stub. Real Coding workers are later tickets.
+    """Produce ticket deliverables in the authorized worktree, without a live CLI.
 
-    The stub claims a workspace identity for this ticket execution so a
-    rerun with the same key cannot record a second branch or PR token.
+    The activity reuses the DP-11 workspace claim so a rerun with the same
+    key cannot record a second branch or open a PR. It does not call Cursor
+    CLI or read CURSOR_API_KEY.
     """
 
-    claim = claim_workspace(payload)
+    activity.heartbeat("producing deliverables")
+    claim = resolve_workspace_claim(payload)
+    result = produce_implement_result(payload, claim.authorized_worktree)
     activity.logger.info(
-        "stub implement_ticket ticket=%s workspace=%s",
+        "implement_ticket ticket=%s complete=%s",
         payload.ticket_id,
-        claim.workspace_id,
+        bool(result.deliverables and result.deliverables.complete),
     )
-    return ImplementResult(diff_submitted=True, detail="stub-implement")
+    return result
 
 
 @activity.defn

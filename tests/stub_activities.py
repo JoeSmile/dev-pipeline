@@ -10,6 +10,7 @@ from temporalio import activity
 
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
+from dev_pipeline.deliverables import stub_ticket_deliverables
 from dev_pipeline.jira_mirror import (
     InMemoryJira,
     JiraLagMarkerInput,
@@ -32,6 +33,7 @@ from dev_pipeline.models import (
     SpikeResult,
     StoryDraft,
     StoryDraftInput,
+    TicketDeliverables,
     TicketWorkInput,
     VerifyResult,
     WorkspaceClaim,
@@ -78,6 +80,8 @@ class StubController:
     reviewed: list[str] = field(default_factory=list)
     publish_calls: int = 0
     implement_fail_remaining: dict[str, int] = field(default_factory=dict)
+    implement_incomplete: set[str] = field(default_factory=set)
+    implement_deliverables: dict[str, TicketDeliverables] = field(default_factory=dict)
     workspace: WorkspaceClaimStore = field(default_factory=WorkspaceClaimStore)
     costly_queue: dict[str, list[CostlyPathResult]] = field(default_factory=dict)
     costly_started: list[str] = field(default_factory=list)
@@ -187,7 +191,20 @@ class StubController:
             if payload.ticket_id in controller.implement_errors:
                 raise RuntimeError(f"implement failed: {payload.ticket_id}")
             await _await_gate(controller.gate("implement", payload.ticket_id))
-            return ImplementResult(diff_submitted=True, detail="test-implement")
+            complete = payload.ticket_id not in controller.implement_incomplete
+            deliverables = controller.implement_deliverables.get(payload.ticket_id)
+            if deliverables is None:
+                deliverables = stub_ticket_deliverables(
+                    payload.ticket_id,
+                    payload.execution_id,
+                    complete=complete,
+                )
+            submitted = complete and bool(deliverables.complete)
+            return ImplementResult(
+                diff_submitted=submitted,
+                detail="test-implement" if submitted else "交付物不齐，不能进入 Reviewing",
+                deliverables=deliverables,
+            )
 
         @activity.defn(name="review_ticket")
         async def review_ticket(payload: TicketWorkInput) -> ReviewFindings:

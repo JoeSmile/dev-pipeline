@@ -54,7 +54,7 @@ stateDiagram-v2
 ```
 
 - Child（`TicketWorkflow`）从 `Pending` 开始。依赖未过线时不得进入 `Implementing`（即使 Child 被直接启动）。
-- 循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。仅建议/信息可从 `Reviewing` 直达 `Verifying`。验证失败回到 `Implementing`。
+- 循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。进入 Reviewing 前必须交付分支、diff、单测与回滚说明，记录在既有快照 `tickets[].deliverables` / Child `snapshot.deliverables`。缺项不得进入 Reviewing。仅建议/信息可从 `Reviewing` 直达 `Verifying`；阻断项或范式漂移必须 HumanGate，交付完成不等于 Review 通过。验证失败回到 `Implementing`。双 Review 本身见 DP-22，本骨架仍使用审查桩。
 
 ## 编排规则（DP-26 最小集）
 
@@ -88,7 +88,7 @@ stateDiagram-v2
 
 `lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
-进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。完整心跳尚未实现。
+进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。写码交付物挂在 `tickets[].deliverables`。完整心跳尚未实现。
 
 ## 配置根目录
 

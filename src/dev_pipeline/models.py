@@ -307,6 +307,52 @@ class SandboxWriteResult:
 
 
 @dataclass
+class TicketDeliverables:
+    """Queryable coding deliverables for one ticket execution.
+
+    Completeness requires a derivable local branch, a reviewable diff, unit-test
+    evidence, and rollback notes. Default is no remote push, merge, or PR.
+    ``pr_authorization`` and ``worktree_recycle`` stay 待证 until DP-31 / DP-30.
+    """
+
+    branch_name: str = ""
+    diff: str = ""
+    test_evidence: str = ""
+    rollback_notes: str = ""
+    complete: bool = False
+    tests_ran_in_worktree: bool = False
+    worktree: str = ""
+    pushed: bool = False
+    merged: bool = False
+    remote_pr_opened: bool = False
+    remote_pr_url: str = ""
+    backend: str = "桩"
+    pr_authorization: str = PENDING_FIELD
+    worktree_recycle: str = PENDING_FIELD
+    missing: list[str] = field(default_factory=list)
+
+
+def is_complete_deliverables(item: TicketDeliverables | None) -> bool:
+    """Return True when branch, diff, unit-test evidence, and rollback notes exist."""
+
+    if item is None:
+        return False
+    return not missing_deliverable_fields(item)
+
+
+def missing_deliverable_fields(item: TicketDeliverables) -> list[str]:
+    """Return the names of missing required deliverable fields."""
+
+    required = (
+        ("branch", item.branch_name),
+        ("diff", item.diff),
+        ("tests", item.test_evidence),
+        ("rollback", item.rollback_notes),
+    )
+    return [name for name, value in required if not (isinstance(value, str) and value.strip())]
+
+
+@dataclass
 class TicketInput:
     """Start payload for one TicketWorkflow child."""
 
@@ -332,10 +378,11 @@ class TicketWorkInput:
 
 @dataclass
 class ImplementResult:
-    """Stub coding result. Real Coding workers are out of scope."""
+    """Coding deliverable result: branch, diff, unit tests, and rollback notes."""
 
-    diff_submitted: bool = True
-    detail: str = "stub-implement"
+    diff_submitted: bool = False
+    detail: str = ""
+    deliverables: TicketDeliverables | None = None
 
 
 @dataclass
@@ -497,6 +544,7 @@ class TicketStateUpdate:
     unhandled_failure: bool = False
     detail: str = ""
     sandbox: SandboxRecord | None = None
+    deliverables: TicketDeliverables | None = None
 
 
 @dataclass
@@ -533,6 +581,7 @@ class TicketSnapshot:
     unhandled_failure: bool = False
     detail: str = ""
     sandbox: SandboxRecord | None = None
+    deliverables: TicketDeliverables | None = None
 
 
 @dataclass
@@ -596,6 +645,7 @@ class TicketResult:
     stage: TicketStage
     detail: str = ""
     sandbox: SandboxRecord | None = None
+    deliverables: TicketDeliverables | None = None
 
 
 def ticket_workflow_id(ticket_id: str, execution_id: str) -> str:

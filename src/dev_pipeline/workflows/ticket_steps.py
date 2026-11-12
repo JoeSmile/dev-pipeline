@@ -12,11 +12,13 @@ from dev_pipeline.models import (
     ReviewOverride,
     SandboxRecord,
     SandboxWriteInput,
+    TicketDeliverables,
     TicketInput,
     TicketResult,
     TicketStateUpdate,
     TicketWorkInput,
     VerifyResult,
+    is_complete_deliverables,
 )
 from dev_pipeline.stages import TicketStage
 from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
@@ -27,8 +29,10 @@ with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.workspace import claim_ticket_workspace
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
+IMPLEMENT_TIMEOUT = timedelta(seconds=90)
 CLAIM_TIMEOUT = timedelta(seconds=10)
 HEARTBEAT_TIMEOUT = timedelta(seconds=2)
+IMPLEMENT_HEARTBEAT_TIMEOUT = timedelta(seconds=30)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
 CLAIM_RETRY = RetryPolicy(
     maximum_attempts=3,
@@ -50,6 +54,7 @@ class TicketRuntime:
         self.dependencies_verified = False
         self.detail = ""
         self.sandbox: SandboxRecord | None = None
+        self.deliverables: TicketDeliverables | None = None
 
     def stopped(self) -> bool:
         """Return True when the child should leave the work loop."""
@@ -86,6 +91,7 @@ class TicketRuntime:
             stage=self.stage,
             detail=self.detail,
             sandbox=self.sandbox,
+            deliverables=self.deliverables,
         )
 
 
@@ -103,6 +109,7 @@ async def notify_parent(runtime: TicketRuntime, *, unhandled_failure: bool = Fal
             unhandled_failure=failed,
             detail=runtime.detail,
             sandbox=runtime.sandbox,
+            deliverables=runtime.deliverables,
         ),
     )
 
@@ -177,14 +184,16 @@ async def run_implement(runtime: TicketRuntime) -> None:
     result = await workflow.execute_activity(
         implement_ticket,
         work,
-        start_to_close_timeout=ACTIVITY_TIMEOUT,
-        heartbeat_timeout=HEARTBEAT_TIMEOUT,
+        start_to_close_timeout=IMPLEMENT_TIMEOUT,
+        heartbeat_timeout=IMPLEMENT_HEARTBEAT_TIMEOUT,
         retry_policy=NO_RETRY,
     )
     if runtime.stopped():
         return
-    if not result.diff_submitted:
-        runtime.detail = result.detail or "implement did not submit a diff"
+    runtime.deliverables = result.deliverables
+    complete = result.diff_submitted and is_complete_deliverables(result.deliverables)
+    if not complete:
+        runtime.detail = result.detail or "交付物不齐，不能进入 Reviewing"
         runtime.move(TicketStage.FAILED, "activity_failed")
         await notify_parent(runtime, unhandled_failure=True)
         return
