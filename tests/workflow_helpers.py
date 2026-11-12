@@ -17,6 +17,7 @@ from dev_pipeline.constants import DEFAULT_TASK_QUEUE, WAITING_AUTHORIZE_TEST_DE
 from dev_pipeline.models import (
     PipelineResult,
     PipelineSnapshot,
+    ReviewOverride,
     SchemeDecision,
     SchemeHypothesis,
     ScopeLock,
@@ -52,6 +53,27 @@ def scope_lock(
 ) -> ScopeLock:
     """Build a valid lock_scope payload for workflow tests."""
     return ScopeLock(in_scope=in_scope, out_of_scope=out_of_scope, locked_by=locked_by)
+
+
+def review_override(
+    ticket_id: str,
+    decision: str = "approve",
+    *,
+    decided_by: str = "tester",
+    reason: str = "",
+) -> ReviewOverride:
+    """Build a valid review_override payload for workflow tests."""
+    from dev_pipeline.review import normalize_review_decision
+
+    normalized = normalize_review_decision(decision)
+    if normalized is None:
+        raise ValueError(f"invalid review decision: {decision}")
+    return ReviewOverride(
+        ticket_id=ticket_id,
+        decision=normalized,
+        decided_by=decided_by,
+        reason=reason,
+    )
 
 
 def complete_ticket(ticket_id: str, depends_on: list[str] | None = None) -> TicketSpec:

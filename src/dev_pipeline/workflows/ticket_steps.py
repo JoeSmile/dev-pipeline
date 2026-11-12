@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 from temporalio import workflow
@@ -18,13 +19,16 @@ from dev_pipeline.models import (
     TicketStateUpdate,
     TicketWorkInput,
     VerifyResult,
+    format_scope_lock_time,
     is_complete_deliverables,
 )
 from dev_pipeline.review import (
     REVIEW_WORKER_IDS,
     DualReviewRecord,
+    ReviewOverrideRecord,
     ReviewWorkInput,
     aggregate_dual_review,
+    review_decision_label,
 )
 from dev_pipeline.stages import TicketStage
 from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
@@ -260,21 +264,44 @@ async def run_review(runtime: TicketRuntime) -> None:
 
 
 async def run_human_gate(runtime: TicketRuntime) -> None:
-    """Wait for review_override and route to rework, verify, or blocked."""
+    """Wait for review_override and route to rework, verify, or blocked.
+
+    There is no timeout auto-pass; the child stays in HumanGate until a
+    human Signal arrives or the ticket is dropped or aborted.
+    """
     await workflow.wait_condition(lambda: runtime.override is not None or runtime.stopped())
     if runtime.stopped():
         return
-    decision = runtime.override.decision if runtime.override is not None else "rework"
+    override = runtime.override
     runtime.override = None
-    if decision == "reject":
-        runtime.detail = "review_override reject"
+    if override is None:
+        return
+    decided_at = override.decided_at.strip() or format_scope_lock_time(workflow.now())
+    action = review_decision_label(override.decision)
+    record = ReviewOverrideRecord(
+        ticket_id=override.ticket_id or (
+            runtime.input.ticket_id if runtime.input is not None else ""
+        ),
+        decision=override.decision,
+        action=action,
+        decided_by=override.decided_by,
+        decided_at=decided_at,
+        reason=override.reason,
+    )
+    base = runtime.review if runtime.review is not None else DualReviewRecord()
+    runtime.review = replace(base, override=record)
+    if override.decision == "reject":
+        runtime.detail = f"人工否决（{override.decided_by or '未署名'}）"
         runtime.move(TicketStage.BLOCKED, "review_override_reject")
         await notify_parent(runtime, unhandled_failure=True)
         return
-    if decision == "rework":
+    if override.decision == "rework":
+        actor = override.decided_by or "未署名"
+        runtime.detail = f"人工打回（{actor}），该 Ticket 回到 Implementing"
         runtime.move(TicketStage.IMPLEMENTING, "review_override_rework")
         await notify_parent(runtime)
         return
+    runtime.detail = f"人工放行（{override.decided_by or '未署名'}）"
     runtime.move(TicketStage.VERIFYING, "review_override_approve")
     await notify_parent(runtime)
 

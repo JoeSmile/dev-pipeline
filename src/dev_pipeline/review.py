@@ -14,6 +14,21 @@ from dev_pipeline.budget import no_new_evidence_reason
 
 ReviewSeverity = Literal["阻断", "建议", "信息"]
 ReviewDestination = Literal["HumanGate", "Verifying"]
+ReviewOverrideDecision = Literal["approve", "rework", "reject"]
+
+REVIEW_DECISION_ALIASES: dict[str, ReviewOverrideDecision] = {
+    "approve": "approve",
+    "rework": "rework",
+    "reject": "reject",
+    "放行": "approve",
+    "打回": "rework",
+    "否决": "reject",
+}
+REVIEW_DECISION_LABELS: dict[ReviewOverrideDecision, str] = {
+    "approve": "放行",
+    "rework": "打回",
+    "reject": "否决",
+}
 
 REVIEW_WORKER_IDS: tuple[str, ...] = ("standards", "spec")
 REVIEW_WORKER_LABELS = {
@@ -117,6 +132,36 @@ class DualReviewRecord:
     write_rejected: bool = False
     write_reason: str = ""
     workspace_unchanged: bool = True
+    override: ReviewOverrideRecord | None = None
+
+
+@dataclass
+class ReviewOverrideRecord:
+    """Human review_override decision stored on the existing review snapshot."""
+
+    ticket_id: str = ""
+    decision: ReviewOverrideDecision | str = ""
+    action: str = ""
+    decided_by: str = ""
+    decided_at: str = ""
+    reason: str = ""
+
+
+def normalize_review_decision(raw: object) -> ReviewOverrideDecision | None:
+    """Map 放行/打回/否决 or approve/rework/reject to the stored English decision."""
+
+    if not isinstance(raw, str):
+        return None
+    return REVIEW_DECISION_ALIASES.get(raw.strip())
+
+
+def review_decision_label(decision: object) -> str:
+    """Return the Chinese action label for a stored review decision."""
+
+    normalized = normalize_review_decision(decision)
+    if normalized is None:
+        return ""
+    return REVIEW_DECISION_LABELS[normalized]
 
 
 def is_line_limit_violation(item: ReviewFinding) -> bool:

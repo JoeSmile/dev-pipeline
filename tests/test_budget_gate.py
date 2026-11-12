@@ -13,6 +13,7 @@ from tests.workflow_helpers import (
     advance_to_implementing,
     complete_ticket,
     exception_text,
+    stage_of,
     start_parent,
     started,
     story,
@@ -193,7 +194,13 @@ async def test_budget_breach_does_not_cancel_sibling_tickets(
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
         await advance_to_implementing(handle, payload)
-        await wait_snapshot(handle, lambda item: started(item, "A") and started(item, "B"))
+        await wait_snapshot(
+            handle,
+            lambda item: (
+                stage_of(item, "A") is TicketStage.IMPLEMENTING
+                and stage_of(item, "B") is TicketStage.IMPLEMENTING
+            ),
+        )
         outcome = await handle.execute_update(
             DevPipelineWorkflow.start_costly_path,
             CostlyPathRequest(path="model"),

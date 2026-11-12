@@ -273,7 +273,7 @@ async def test_blocking_review_waits_for_human_gate(
         assert snap.stage is ParentStage.IMPLEMENTING
         await handle.signal(
             DevPipelineWorkflow.review_override,
-            ReviewOverride(ticket_id="A", decision="approve"),
+            ReviewOverride(ticket_id="A", decision="approve", decided_by="tester"),
         )
         await authorize_test_deploy(handle)
         result = await wait_terminal(handle)

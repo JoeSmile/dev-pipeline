@@ -64,8 +64,10 @@ class TicketWorkflow:
 
     @workflow.signal
     def review_override(self, payload: ReviewOverride) -> None:
-        """Apply a human review decision to this ticket."""
+        """Apply a human review decision only while this ticket is in HumanGate."""
         if self._work.input is not None and payload.ticket_id != self._work.input.ticket_id:
+            return
+        if not self._work.in_stage(TicketStage.HUMAN_GATE):
             return
         self._work.override = payload
 

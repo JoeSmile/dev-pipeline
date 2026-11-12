@@ -46,7 +46,7 @@ async def test_history_contains_human_signals_and_reopen_start(
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=True))
         await handle.signal(
             DevPipelineWorkflow.review_override,
-            ReviewOverride(ticket_id="A", decision="approve"),
+            ReviewOverride(ticket_id="A", decision="approve", decided_by="tester"),
         )
         await handle.signal(
             DevPipelineWorkflow.promote_rule,

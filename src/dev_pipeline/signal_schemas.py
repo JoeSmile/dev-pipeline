@@ -27,9 +27,8 @@ from dev_pipeline.models import (
     TicketSpec,
     has_red_line_hypothesis,
 )
+from dev_pipeline.review import normalize_review_decision
 from dev_pipeline.ticket_list import ticket_list_completion_error
-
-_REVIEW_DECISIONS = frozenset({"approve", "rework", "reject"})
 
 
 @dataclass(frozen=True)
@@ -63,8 +62,8 @@ SCHEMAS: dict[str, SignalSchema] = {
     "reopen": SignalSchema(ReopenRequest, ("execution_id",), nonempty=("execution_id",)),
     "review_override": SignalSchema(
         ReviewOverride,
-        ("ticket_id", "decision"),
-        nonempty=("ticket_id", "decision"),
+        ("ticket_id", "decision", "decided_by"),
+        nonempty=("ticket_id", "decision", "decided_by"),
     ),
     "promote_rule": SignalSchema(
         PromoteRuleRequest,
@@ -116,6 +115,8 @@ def _parse_known_signal(
         mapping.pop("has_high_risk_assumption", None)
         mapping.pop("decided_at", None)
         mapping.pop("retrieval", None)
+    if signal == "review_override" and not isinstance(payload, dict):
+        mapping.pop("decided_at", None)
     missing = [name for name in schema.required if name not in mapping or mapping[name] is None]
     if missing:
         return None, f"{signal} 缺少必填字段: {', '.join(missing)}"
@@ -147,9 +148,11 @@ def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> s
         if not isinstance(value, str) or not value.strip():
             return f"{signal} 的 {name} 必须是非空字符串"
     if signal == "review_override":
-        decision = mapping.get("decision")
-        if decision not in _REVIEW_DECISIONS:
-            return "review_override 的 decision 必须是 approve、rework 或 reject"
+        if normalize_review_decision(mapping.get("decision")) is None:
+            return (
+                "review_override 的 decision 必须是 放行、打回、否决"
+                "（或 approve、rework、reject）"
+            )
     if signal == "decide_scheme":
         hypo_error = _hypotheses_error(mapping.get("hypotheses"))
         if hypo_error is not None:
@@ -272,9 +275,13 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
     if signal == "reopen":
         return ReopenRequest(execution_id=str(mapping["execution_id"]).strip())
     if signal == "review_override":
+        decision = normalize_review_decision(mapping["decision"])
+        assert decision is not None
         return ReviewOverride(
             ticket_id=str(mapping["ticket_id"]).strip(),
-            decision=mapping["decision"],
+            decision=decision,
+            decided_by=str(mapping["decided_by"]).strip(),
+            reason=str(mapping.get("reason") or "").strip(),
         )
     if signal == "promote_rule":
         automatic = mapping.get("automatic", False)

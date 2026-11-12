@@ -445,10 +445,19 @@ class RetroResult:
 
 @dataclass
 class ReviewOverride:
-    """Human review_override signal, routed by the parent to one child."""
+    """Human review_override signal, routed by the parent to one child.
+
+    ``decision`` is stored as ``approve`` / ``rework`` / ``reject`` after parse;
+    the signal also accepts ``放行`` / ``打回`` / ``否决``. The workflow stamps
+    ``decided_at`` from ``workflow.now()`` and ignores any client-supplied
+    timestamp. ``reason`` is optional.
+    """
 
     ticket_id: str
     decision: ReviewDecision
+    decided_by: str = ""
+    reason: str = ""
+    decided_at: str = ""
 
 
 @dataclass

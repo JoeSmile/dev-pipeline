@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from temporalio import workflow
@@ -217,8 +218,9 @@ class ParentSignalMixin:
                 f"Ticket {parsed.ticket_id} 不在 HumanGate，不能 review_override",
             )
             return
+        stamped = replace(parsed, decided_at=format_scope_lock_time(workflow.now()))
         await self._route_to_child(  # type: ignore[attr-defined]
-            parsed.ticket_id, "review_override", parsed
+            parsed.ticket_id, "review_override", stamped
         )
 
     def _parsed(self, signal: str, payload: object) -> object | None:

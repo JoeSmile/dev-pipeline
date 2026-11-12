@@ -230,3 +230,16 @@ def test_reserved_review_cli_adapter_is_unwired_and_leaves_workspace(tmp_path: P
     (worktree / "file.txt").write_text("changed\n", encoding="utf-8")
     with pytest.raises(SandboxViolation, match="工作区发生改动"):
         assert_workspace_unchanged(str(worktree), plan.fingerprint_before)
+
+
+def test_normalize_review_decision_accepts_chinese_and_english() -> None:
+    from dev_pipeline.review import normalize_review_decision, review_decision_label
+
+    assert normalize_review_decision("放行") == "approve"
+    assert normalize_review_decision("打回") == "rework"
+    assert normalize_review_decision("否决") == "reject"
+    assert normalize_review_decision("approve") == "approve"
+    assert normalize_review_decision("maybe") is None
+    assert review_decision_label("放行") == "放行"
+    assert review_decision_label("rework") == "打回"
+    assert review_decision_label("reject") == "否决"

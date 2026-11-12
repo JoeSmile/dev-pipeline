@@ -133,7 +133,7 @@ async def test_review_override_rejects_unknown_or_non_gate_ticket(
         await wait_snapshot(handle, lambda item: started(item, "A"))
         await handle.signal(
             DevPipelineWorkflow.review_override,
-            ReviewOverride(ticket_id="NOPE", decision="approve"),
+            ReviewOverride(ticket_id="NOPE", decision="approve", decided_by="tester"),
         )
         snap = await wait_snapshot(
             handle,
@@ -145,7 +145,7 @@ async def test_review_override_rejects_unknown_or_non_gate_ticket(
         assert "未知 Ticket" in snap.last_rejection.reason
         await handle.signal(
             DevPipelineWorkflow.review_override,
-            ReviewOverride(ticket_id="A", decision="approve"),
+            ReviewOverride(ticket_id="A", decision="approve", decided_by="tester"),
         )
         snap = await wait_snapshot(
             handle,

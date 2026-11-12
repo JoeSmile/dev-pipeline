@@ -78,8 +78,15 @@ def test_missing_required_fields_and_type_errors_are_rejected() -> None:
     _, reason = parse_human_signal("decide_scheme", {"notes": "only"})
     assert reason is not None and "缺少必填字段" in reason
     assert "tradeoff" in reason and "hypotheses" in reason and "decided_by" in reason
-    _, reason = parse_human_signal("review_override", {"ticket_id": "A", "decision": "maybe"})
-    assert reason is not None and "approve、rework 或 reject" in reason
+    _, reason = parse_human_signal(
+        "review_override",
+        {"ticket_id": "A", "decision": "maybe", "decided_by": "tester"},
+    )
+    assert reason is not None and "放行、打回、否决" in reason
+    _, reason = parse_human_signal(
+        "review_override", {"ticket_id": "A", "decision": "approve"}
+    )
+    assert reason is not None and "缺少必填字段" in reason and "decided_by" in reason
     _, reason = parse_human_signal("promote_rule", {"rule_name": "r", "automatic": "yes"})
     assert reason is not None and "必须是 bool" in reason
 
@@ -165,9 +172,38 @@ def test_red_line_helper_and_complete_scheme_record() -> None:
 
 def test_review_override_and_reopen_accept_valid_objects() -> None:
     parsed, reason = parse_human_signal(
-        "review_override", ReviewOverride(ticket_id="A", decision="approve")
+        "review_override",
+        ReviewOverride(
+            ticket_id="A",
+            decision="approve",
+            decided_by="tester",
+            decided_at="1999-01-01T00:00:00Z",
+        ),
     )
     assert reason is None and isinstance(parsed, ReviewOverride)
+    assert parsed.decision == "approve"
+    assert parsed.decided_by == "tester"
+    assert parsed.decided_at == ""
+    parsed, reason = parse_human_signal(
+        "review_override",
+        {"ticket_id": "A", "decision": "放行", "decided_by": "郭伟", "reason": "可接受"},
+    )
+    assert reason is None and isinstance(parsed, ReviewOverride)
+    assert parsed.decision == "approve"
+    assert parsed.decided_by == "郭伟"
+    assert parsed.reason == "可接受"
+    parsed, reason = parse_human_signal(
+        "review_override",
+        {"ticket_id": "B", "decision": "打回", "decided_by": "郭伟"},
+    )
+    assert reason is None and isinstance(parsed, ReviewOverride)
+    assert parsed.decision == "rework"
+    parsed, reason = parse_human_signal(
+        "review_override",
+        {"ticket_id": "C", "decision": "否决", "decided_by": "郭伟"},
+    )
+    assert reason is None and isinstance(parsed, ReviewOverride)
+    assert parsed.decision == "reject"
     parsed, reason = parse_human_signal("reopen", ReopenRequest(execution_id="exec-2"))
     assert reason is None and isinstance(parsed, ReopenRequest)
     parsed, reason = parse_human_signal(
