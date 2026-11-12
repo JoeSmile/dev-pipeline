@@ -7,6 +7,7 @@ from typing import Any
 from temporalio import workflow
 
 from dev_pipeline.models import (
+    RETRIEVAL_STUB,
     AbortRequest,
     ApproveSpikeRequest,
     PromoteRuleRequest,
@@ -15,6 +16,7 @@ from dev_pipeline.models import (
     SchemeDecision,
     ScopeLock,
     format_scope_lock_time,
+    has_red_line_hypothesis,
 )
 from dev_pipeline.signal_schemas import parse_human_signal
 from dev_pipeline.stages import ParentStage, TicketStage
@@ -70,7 +72,16 @@ class ParentSignalMixin:
                 "当前阶段不能拍方案",
             )
             return
-        self._state.scheme = parsed
+        self._state.scheme = SchemeDecision(
+            tradeoff=parsed.tradeoff,
+            hypotheses=list(parsed.hypotheses),
+            decided_by=parsed.decided_by,
+            decided_at=format_scope_lock_time(workflow.now()),
+            retrieval=RETRIEVAL_STUB,
+            tickets=list(parsed.tickets),
+            has_high_risk_assumption=has_red_line_hypothesis(list(parsed.hypotheses)),
+            notes=parsed.notes,
+        )
         if parsed.tickets:
             self._state.install_tickets(parsed.tickets)
 

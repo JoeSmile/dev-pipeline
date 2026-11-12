@@ -102,6 +102,32 @@ def is_complete_scope_lock(scope: ScopeLock) -> bool:
     )
 
 
+def has_red_line_hypothesis(hypotheses: list[SchemeHypothesis]) -> bool:
+    """Return True when at least one hypothesis is graded 红线级."""
+
+    return any(item.grade == "红线级" for item in hypotheses)
+
+
+def is_complete_scheme_decision(scheme: SchemeDecision) -> bool:
+    """Return True when 取舍说明, 假设清单, 拍板人, 时间, and 检索标记 are present."""
+
+    if not all(
+        isinstance(value, str) and bool(value.strip())
+        for value in (scheme.tradeoff, scheme.decided_by, scheme.decided_at)
+    ):
+        return False
+    if scheme.retrieval not in {RETRIEVAL_STUB, RETRIEVAL_HIT}:
+        return False
+    if not isinstance(scheme.hypotheses, list):
+        return False
+    return all(
+        isinstance(item.statement, str)
+        and bool(item.statement.strip())
+        and item.grade in HYPOTHESIS_GRADES
+        for item in scheme.hypotheses
+    )
+
+
 @dataclass
 class StoryInput:
     """Start payload for one parent DevPipelineWorkflow execution."""
@@ -113,14 +139,43 @@ class StoryInput:
     summary: str = ""
     intake: IntakeRecord | None = None
     inherited_scope: ScopeLock | None = None
+    auto_start_children: bool = False
+
+
+HypothesisGrade = Literal["红线级", "局部", "候选"]
+RetrievalMark = Literal["桩", "真实命中"]
+HYPOTHESIS_GRADES: frozenset[HypothesisGrade] = frozenset({"红线级", "局部", "候选"})
+RETRIEVAL_STUB: RetrievalMark = "桩"
+RETRIEVAL_HIT: RetrievalMark = "真实命中"
+
+
+@dataclass
+class SchemeHypothesis:
+    """One graded scheme hypothesis. Grade must be 红线级 / 局部 / 候选."""
+
+    statement: str
+    grade: HypothesisGrade
 
 
 @dataclass
 class SchemeDecision:
-    """Payload for the decide_scheme human signal."""
+    """decide_scheme payload and the scheme trade-off execution record.
 
-    has_high_risk_assumption: bool = False
+    Human signals must supply ``tradeoff``, ``hypotheses``, and
+    ``decided_by``. The workflow stamps ``decided_at`` from
+    ``workflow.now()`` and records ``retrieval`` as ``桩`` on the
+    deterministic stub path, ignoring client-supplied time or a claimed
+    ``真实命中``. ``has_high_risk_assumption`` is derived from whether
+    any hypothesis is graded 红线级.
+    """
+
+    tradeoff: str
+    hypotheses: list[SchemeHypothesis] = field(default_factory=list)
+    decided_by: str = ""
+    decided_at: str = ""
+    retrieval: RetrievalMark = RETRIEVAL_STUB
     tickets: list[TicketSpec] = field(default_factory=list)
+    has_high_risk_assumption: bool = False
     notes: str = ""
 
 
@@ -287,6 +342,7 @@ class ReopenStartInput:
     summary: str = ""
     intake: IntakeRecord | None = None
     inherited_scope: ScopeLock | None = None
+    auto_start_children: bool = False
 
 
 @dataclass
@@ -368,6 +424,7 @@ class PipelineSnapshot:
     jira_mirror: JiraMirrorSnapshot | None = None
     story_draft: StoryDraft | None = None
     scope: ScopeLock | None = None
+    scheme: SchemeDecision | None = None
 
 
 @dataclass

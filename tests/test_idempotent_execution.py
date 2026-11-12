@@ -23,6 +23,7 @@ from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
     authorize_test_deploy,
+    scheme_decision,
     stage_of,
     start_parent,
     started,
@@ -36,7 +37,6 @@ from dev_pipeline.constants import DEFAULT_TASK_QUEUE
 from dev_pipeline.models import (
     AbortRequest,
     ReopenRequest,
-    SchemeDecision,
     ScopeLock,
     TicketInput,
     TicketResult,
@@ -253,7 +253,7 @@ async def test_reopen_uses_new_key_and_leaves_old_claim_untouched(
         await wait_snapshot(new_handle, lambda item: item.stage is not ParentStage.INTAKE)
         await new_handle.signal(
             DevPipelineWorkflow.decide_scheme,
-            SchemeDecision(has_high_risk_assumption=False, tickets=list(payload.tickets)),
+            scheme_decision(payload),
         )
         await wait_snapshot(
             new_handle,

@@ -11,6 +11,7 @@ from temporalio.testing import WorkflowEnvironment
 from tests.stub_activities import StubController
 from tests.workflow_helpers import (
     advance_to_implementing,
+    scheme_decision,
     start_parent,
     started,
     story,
@@ -24,7 +25,6 @@ from dev_pipeline.models import (
     PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
-    SchemeDecision,
     ScopeLock,
     StoryInput,
     TicketSpec,
@@ -55,7 +55,7 @@ async def test_wrong_stage_signals_are_rejected_and_stage_stays(
     try:
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,
-            SchemeDecision(has_high_risk_assumption=False),
+            scheme_decision(),
         )
         snap = await wait_snapshot(
             handle,

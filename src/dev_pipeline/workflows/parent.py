@@ -50,23 +50,27 @@ class DevPipelineWorkflow(
         if state.abort_requested:
             return await self._block("abort")
         if state.scheme is not None and state.scheme.has_high_risk_assumption:
-            blocked = await self._run_spike()
+            blocked = await self._enter_optional_spike()
             if blocked is not None:
                 return blocked
-        await self._advance_to_implementing()
+        else:
+            await self._move(ParentStage.TICKETS_READY, "no_high_risk_assumption")
+            state.waiting = None
         if state.abort_requested:
             return await self._block("abort")
-        await self._orchestrate_tickets()
-        if state.abort_requested:
-            return await self._block(state.abort_reason)
-        return await self._run_test_deploy_and_retro()
+        if self._should_start_children():
+            await self._move(ParentStage.IMPLEMENTING, "start_eligible_children")
+            await self._orchestrate_tickets()
+            if state.abort_requested:
+                return await self._block(state.abort_reason)
+            return await self._run_test_deploy_and_retro()
+        await workflow.wait_condition(lambda: state.abort_requested)
+        return await self._block(state.abort_reason)
 
-    async def _advance_to_implementing(self) -> None:
-        await self._move(ParentStage.TICKETS_READY, "no_high_risk_assumption")
-        self._state.waiting = None
-        if self._state.abort_requested:
-            return
-        await self._move(ParentStage.IMPLEMENTING, "start_eligible_children")
+    def _should_start_children(self) -> bool:
+        """Skeleton tests may opt into Child dispatch; production stays at TicketsReady."""
+        payload = self._state.input
+        return payload is not None and payload.auto_start_children
 
     @workflow.query
     def snapshot(self) -> PipelineSnapshot:

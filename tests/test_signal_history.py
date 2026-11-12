@@ -8,7 +8,13 @@ import pytest
 from temporalio.testing import WorkflowEnvironment
 from tests.history_events import scheduled_activity_names, signaled_names
 from tests.stub_activities import StubController
-from tests.workflow_helpers import start_parent, story, wait_snapshot, wait_terminal
+from tests.workflow_helpers import (
+    scheme_decision,
+    start_parent,
+    story,
+    wait_snapshot,
+    wait_terminal,
+)
 
 from dev_pipeline.models import (
     AbortRequest,
@@ -16,7 +22,6 @@ from dev_pipeline.models import (
     PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
-    SchemeDecision,
     ScopeLock,
     TicketSpec,
 )
@@ -35,7 +40,7 @@ async def test_history_contains_human_signals_and_reopen_start(
     try:
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,
-            SchemeDecision(has_high_risk_assumption=False, tickets=list(payload.tickets)),
+            scheme_decision(payload),
         )
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=True))
         await handle.signal(

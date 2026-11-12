@@ -53,6 +53,7 @@ class ParentReopenMixin:
                 summary=payload.summary,
                 intake=payload.intake,
                 inherited_scope=state.scope,
+                auto_start_children=payload.auto_start_children,
             ),
             start_to_close_timeout=REOPEN_START_TIMEOUT,
             retry_policy=REOPEN_START_RETRY,

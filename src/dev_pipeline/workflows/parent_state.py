@@ -215,4 +215,5 @@ class ParentState:
             jira_mirror=self.jira_mirror,
             story_draft=self.story_draft,
             scope=self.scope,
+            scheme=self.scheme,
         )

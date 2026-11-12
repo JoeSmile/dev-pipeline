@@ -128,7 +128,7 @@ stateDiagram-v2
 |---|---|---|
 | Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿（`snapshot.story_draft`：要解决什么、已知约束、缺项列表）；缺项标 `待证`，无臆造验收。草稿是 `lock_scope` 的输入，本阶段不锁范围 |
 | ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么已写入执行记录（含锁定人、时间），可供 Query 与 `reopen` 只读继承；禁止未锁范围就开编码 |
-| SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录；假设清单（红线级 / 局部）；全局 vs 局部 vs 候选 |
+| SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录（`snapshot.scheme`：取舍说明、假设清单分级为红线级 / 局部 / 候选、拍板人、时间、检索为桩或真实命中）；无红线级可直达 TicketsReady |
 | Spike（可选） | 红线级假设 | 半小时～半天可证伪结果；失败则 Blocked 或补防护 |
 | TicketsReady | 已拍方案 | Ticket 清单：目标、验收、依赖、I/O 契约 |
 | Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环；全部未移除 Ticket 过线后等候 authorize_test_deploy |
@@ -159,7 +159,7 @@ stateDiagram-v2
 | Signal | Payload | 必填 | 合法阶段 | 拒绝条件 |
 |---|---|---|---|---|
 | `lock_scope` | `ScopeLock` | `in_scope`、`out_of_scope`、`locked_by` | Intake | 缺字段、类型错误、范围已锁或只读继承后、阶段不对。`locked_at` 由工作流写入，不取自 payload |
-| `decide_scheme` | `SchemeDecision` | `has_high_risk_assumption` | ScopeLocked | 缺字段、类型错误、已拍过、阶段不对 |
+| `decide_scheme` | `SchemeDecision` | `tradeoff`、`hypotheses`（分级：红线级 / 局部 / 候选）、`decided_by` | ScopeLocked | 缺字段、类型错误、未知分级、布尔值与分级冲突、已拍过、阶段不对（含未锁范围）。`decided_at` 由工作流写入，不取自 payload。检索标记本票记为 `桩`。无红线级假设进入 TicketsReady；有红线级假设进入 Spike |
 | `approve_spike` | `ApproveSpikeRequest` | `accepted` | Spike | 缺字段、类型错误、已决定、阶段不对 |
 | `review_override` | `ReviewOverride` | `ticket_id`、`decision`（`approve` / `rework` / `reject`） | 对应 Child 处于 HumanGate | 缺字段、类型错误、未知 Ticket、不在 HumanGate |
 | `authorize_test_deploy` | `AuthorizeTestDeployRequest`（无必填字段） | （无） | Implementing，且全部未移除 Ticket 已过线 | 阶段不对，或尚有 Ticket 未过线 / 失败未处理 |
@@ -180,7 +180,7 @@ stateDiagram-v2
 7. 任何生产发布禁止。测试环境受控发布须另有明确授权。
 8. 未确认 `lock_scope` / `decide_scheme` 前不得编码。
 9. 单文件超过 2000 行视为 Review 阻断。
-10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal、各 Ticket 状态、测试部署状态、已花费预算、Jira 镜像 / 镜像滞后、已锁范围）。
+10. 执行过程必须可见：当前步骤提示与定期心跳，避免被当成挂死。进度不是催办；完整思考与密钥不进 History。本骨架提供可查询快照（当前阶段、等待的 Signal、各 Ticket 状态、测试部署状态、已花费预算、Jira 镜像 / 镜像滞后、已锁范围、方案取舍记录）。
 
 优先级：数据 / 任务不丢失 > 可观测与可回放 > 人工门禁清楚 > 迭代速度 > 极致性能。
 

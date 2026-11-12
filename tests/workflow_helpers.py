@@ -18,6 +18,7 @@ from dev_pipeline.models import (
     PipelineResult,
     PipelineSnapshot,
     SchemeDecision,
+    SchemeHypothesis,
     ScopeLock,
     StoryInput,
     TicketSpec,
@@ -58,6 +59,7 @@ def story(
     tickets: Sequence[TicketSpec],
     *,
     suffix: str | None = None,
+    auto_start_children: bool = True,
 ) -> StoryInput:
     token = suffix or uuid.uuid4().hex[:8]
     return StoryInput(
@@ -66,6 +68,32 @@ def story(
         config_root=str(config_root),
         tickets=list(tickets),
         summary="test story",
+        auto_start_children=auto_start_children,
+    )
+
+
+
+def scheme_decision(
+    payload: StoryInput | None = None,
+    *,
+    high_risk: bool = False,
+    decided_by: str = "tester",
+    tradeoff: str = "采用现有方案，不做未提供的技术细节",
+    tickets: Sequence[TicketSpec] | None = None,
+) -> SchemeDecision:
+    """Build a valid decide_scheme payload for workflow tests."""
+    hypotheses = (
+        [SchemeHypothesis(statement="该假设可能击穿 L0", grade="红线级")]
+        if high_risk
+        else [SchemeHypothesis(statement="局部接口可替换", grade="局部")]
+    )
+    specs = list(tickets) if tickets is not None else list(payload.tickets) if payload else []
+    return SchemeDecision(
+        tradeoff=tradeoff,
+        hypotheses=hypotheses,
+        decided_by=decided_by,
+        tickets=specs,
+        has_high_risk_assumption=high_risk,
     )
 
 
@@ -110,7 +138,7 @@ async def advance_to_implementing(
     )
     await handle.signal(
         DevPipelineWorkflow.decide_scheme,
-        SchemeDecision(has_high_risk_assumption=high_risk, tickets=list(payload.tickets)),
+        scheme_decision(payload, high_risk=high_risk),
     )
     return await wait_snapshot(
         handle,

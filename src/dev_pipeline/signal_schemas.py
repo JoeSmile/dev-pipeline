@@ -11,15 +11,20 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import Any
 
 from dev_pipeline.models import (
+    HYPOTHESIS_GRADES,
+    RETRIEVAL_STUB,
     AbortRequest,
     ApproveSpikeRequest,
     AuthorizeTestDeployRequest,
+    HypothesisGrade,
     PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     SchemeDecision,
+    SchemeHypothesis,
     ScopeLock,
     TicketSpec,
+    has_red_line_hypothesis,
 )
 
 _REVIEW_DECISIONS = frozenset({"approve", "rework", "reject"})
@@ -43,7 +48,8 @@ SCHEMAS: dict[str, SignalSchema] = {
     ),
     "decide_scheme": SignalSchema(
         SchemeDecision,
-        ("has_high_risk_assumption",),
+        ("tradeoff", "hypotheses", "decided_by"),
+        nonempty=("tradeoff", "decided_by"),
         bool_fields=("has_high_risk_assumption",),
     ),
     "approve_spike": SignalSchema(
@@ -99,6 +105,10 @@ def _parse_known_signal(
     mapping, error = _as_field_map(signal, schema, payload)
     if error is not None:
         return None, error
+    if signal == "decide_scheme" and not isinstance(payload, dict):
+        mapping.pop("has_high_risk_assumption", None)
+        mapping.pop("decided_at", None)
+        mapping.pop("retrieval", None)
     missing = [name for name in schema.required if name not in mapping or mapping[name] is None]
     if missing:
         return None, f"{signal} 缺少必填字段: {', '.join(missing)}"
@@ -137,8 +147,15 @@ def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> s
         decision = mapping.get("decision")
         if decision not in _REVIEW_DECISIONS:
             return "review_override 的 decision 必须是 approve、rework 或 reject"
-    if signal == "decide_scheme" and "tickets" in mapping and mapping["tickets"] is not None:
-        return _tickets_error(mapping["tickets"])
+    if signal == "decide_scheme":
+        hypo_error = _hypotheses_error(mapping.get("hypotheses"))
+        if hypo_error is not None:
+            return hypo_error
+        conflict = _high_risk_conflict(mapping)
+        if conflict is not None:
+            return conflict
+        if "tickets" in mapping and mapping["tickets"] is not None:
+            return _tickets_error(mapping["tickets"])
     if signal == "promote_rule" and "automatic" in mapping and mapping["automatic"] is None:
         return "promote_rule 的 automatic 必须是 bool"
     return None
@@ -152,6 +169,63 @@ def _tickets_error(raw: object) -> str | None:
         if not ticket_id:
             return f"decide_scheme 的 tickets[{index}] 缺少非空 ticket_id"
     return None
+
+
+def _hypotheses_error(raw: object) -> str | None:
+    if not isinstance(raw, list):
+        return "decide_scheme 的 hypotheses 必须是假设列表"
+    for index, item in enumerate(raw):
+        statement, grade = _hypothesis_fields(item)
+        if not statement:
+            return f"decide_scheme 的 hypotheses[{index}] 缺少非空 statement"
+        if grade not in HYPOTHESIS_GRADES:
+            return f"decide_scheme 的 hypotheses[{index}].grade 必须是红线级、局部或候选"
+    return None
+
+
+def _as_grade(value: object) -> HypothesisGrade | None:
+    if value == "红线级" or value == "局部" or value == "候选":
+        return value
+    return None
+
+
+def _hypothesis_fields(item: object) -> tuple[str, object]:
+    if isinstance(item, SchemeHypothesis):
+        return item.statement.strip(), item.grade
+    if isinstance(item, dict):
+        statement = item.get("statement", "")
+        return (statement.strip() if isinstance(statement, str) else ""), item.get("grade")
+    return "", None
+
+
+def _high_risk_conflict(mapping: dict[str, Any]) -> str | None:
+    if "has_high_risk_assumption" not in mapping or mapping["has_high_risk_assumption"] is None:
+        return None
+    flag = mapping["has_high_risk_assumption"]
+    if not isinstance(flag, bool):
+        return "decide_scheme 的 has_high_risk_assumption 必须是 bool"
+    hypotheses = _build_hypotheses(mapping.get("hypotheses") or [])
+    if flag != has_red_line_hypothesis(hypotheses):
+        return "decide_scheme 的 has_high_risk_assumption 与假设分级不一致"
+    return None
+
+
+def _build_hypotheses(raw: object) -> list[SchemeHypothesis]:
+    hypotheses: list[SchemeHypothesis] = []
+    if not isinstance(raw, list):
+        return hypotheses
+    for item in raw:
+        if isinstance(item, SchemeHypothesis):
+            hypotheses.append(
+                SchemeHypothesis(statement=item.statement.strip(), grade=item.grade)
+            )
+            continue
+        if isinstance(item, dict):
+            statement, raw_grade = _hypothesis_fields(item)
+            grade = _as_grade(raw_grade)
+            if grade is not None:
+                hypotheses.append(SchemeHypothesis(statement=statement, grade=grade))
+    return hypotheses
 
 
 def _ticket_id_of(item: object) -> str:
@@ -171,10 +245,15 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
             locked_by=str(mapping["locked_by"]).strip(),
         )
     if signal == "decide_scheme":
+        hypotheses = _build_hypotheses(mapping.get("hypotheses") or [])
         return SchemeDecision(
-            has_high_risk_assumption=bool(mapping["has_high_risk_assumption"]),
+            tradeoff=str(mapping["tradeoff"]).strip(),
+            hypotheses=hypotheses,
+            decided_by=str(mapping["decided_by"]).strip(),
             tickets=_build_tickets(mapping.get("tickets") or []),
+            has_high_risk_assumption=has_red_line_hypothesis(hypotheses),
             notes=str(mapping.get("notes") or ""),
+            retrieval=RETRIEVAL_STUB,
         )
     if signal == "approve_spike":
         return ApproveSpikeRequest(accepted=bool(mapping["accepted"]))

@@ -17,8 +17,6 @@ from dev_pipeline.models import (
     PublishResult,
     RetroInput,
     ScopeLock,
-    SpikeInput,
-    SpikeResult,
     StoryDraftInput,
     StoryInput,
     TicketInput,
@@ -41,7 +39,7 @@ from dev_pipeline.workflows.ticket import TicketWorkflow
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.config import validate_config_root
     from dev_pipeline.activities.story_draft import normalize_story_draft
-    from dev_pipeline.activities.stubs import publish_to_test_env, run_spike, write_retro_record
+    from dev_pipeline.activities.stubs import publish_to_test_env, write_retro_record
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
@@ -127,23 +125,11 @@ class ParentOrchestrationMixin:
         await self._move(ParentStage.SCHEME_DECIDED, "decide_scheme")
         state.waiting = None
 
-    async def _run_spike(self) -> PipelineResult | None:
+    async def _enter_optional_spike(self) -> PipelineResult | None:
+        """Enter optional Spike and wait. Spike 跑法 itself is DP-18."""
         state = self._state
-        assert state.input is not None
         await self._move(ParentStage.SPIKE, "high_risk_assumption")
         state.waiting = "approve_spike"
-        try:
-            spike: SpikeResult = await workflow.execute_activity(
-                run_spike,
-                SpikeInput(story_id=state.input.story_id, execution_id=state.input.execution_id),
-                start_to_close_timeout=ACTIVITY_TIMEOUT,
-                retry_policy=NO_RETRY,
-            )
-        except ActivityError as exc:
-            return await self._block(f"red-line fail: {exc}")
-        if spike.red_line_failed:
-            await self._move(ParentStage.BLOCKED, "red_line_fail")
-            return await self._finish_terminal(state.finish_blocked("击穿红线且无防护"))
         await workflow.wait_condition(
             lambda: state.spike_accepted is not None or state.abort_requested
         )

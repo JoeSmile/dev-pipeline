@@ -12,6 +12,7 @@ from tests.workflow_helpers import (
     advance_to_implementing,
     authorize_test_deploy,
     exception_text,
+    scheme_decision,
     stage_of,
     start_parent,
     started,
@@ -30,7 +31,6 @@ from dev_pipeline.models import (
     ReopenRequest,
     ReviewFindings,
     ReviewOverride,
-    SchemeDecision,
     ScopeLock,
     StoryInput,
     TicketSpec,
@@ -314,7 +314,7 @@ async def test_spike_reject_blocks(
         await wait_snapshot(handle, lambda item: item.stage is ParentStage.SCOPE_LOCKED)
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,
-            SchemeDecision(has_high_risk_assumption=True, tickets=list(payload.tickets)),
+            scheme_decision(payload, high_risk=True),
         )
         await wait_snapshot(handle, lambda item: item.stage is ParentStage.SPIKE)
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=False))

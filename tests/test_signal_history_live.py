@@ -12,7 +12,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 from tests.history_events import scheduled_activity_names, signaled_names
 from tests.stub_activities import StubController
-from tests.workflow_helpers import story, wait_snapshot, wait_terminal
+from tests.workflow_helpers import scheme_decision, story, wait_snapshot, wait_terminal
 
 from dev_pipeline.activities.reopen import ReopenStarter
 from dev_pipeline.constants import CLIENT_CONNECT_TIMEOUT, DEFAULT_TASK_QUEUE
@@ -22,7 +22,6 @@ from dev_pipeline.models import (
     PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
-    SchemeDecision,
     ScopeLock,
     TicketSpec,
     story_workflow_id,
@@ -71,7 +70,7 @@ async def test_live_temporal_history_records_signals_and_reopen(
         )
         await handle.signal(
             DevPipelineWorkflow.decide_scheme,
-            SchemeDecision(has_high_risk_assumption=False, tickets=list(payload.tickets)),
+            scheme_decision(payload),
         )
         await handle.signal(DevPipelineWorkflow.approve_spike, ApproveSpikeRequest(accepted=True))
         await handle.signal(
