@@ -19,13 +19,13 @@ from tests.workflow_helpers import (
 from dev_pipeline.models import (
     AbortRequest,
     ApproveSpikeRequest,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     ScopeLock,
     TicketListSubmission,
     TicketSpec,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.signal_schemas import HUMAN_SIGNAL_NAMES
 from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows import DevPipelineWorkflow
@@ -50,7 +50,13 @@ async def test_history_contains_human_signals_and_reopen_start(
         )
         await handle.signal(
             DevPipelineWorkflow.promote_rule,
-            PromoteRuleRequest(rule_name="skill", automatic=False),
+            PromoteRuleRequest(
+                candidate_id="skill",
+                target="L0",
+                reason="history-signal",
+                evidence_citation="docs/knowledge/candidates/skill.md",
+                automatic=False,
+            ),
         )
         await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
         await handle.signal(

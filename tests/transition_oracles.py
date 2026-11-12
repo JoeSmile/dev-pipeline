@@ -24,6 +24,7 @@ README_PARENT_EDGES: frozenset[tuple[str, str, str]] = frozenset(
         ("TestDeploying", "Retro", "test_deploy_success"),
         ("TestDeploying", "Blocked", "test_deploy_failure"),
         ("Retro", "Done", "retro_written"),
+        ("Retro", "Blocked", "retro_write_failure"),
     }
 )
 

@@ -19,7 +19,6 @@ from dev_pipeline.constants import CLIENT_CONNECT_TIMEOUT, DEFAULT_TASK_QUEUE
 from dev_pipeline.models import (
     AbortRequest,
     ApproveSpikeRequest,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     ScopeLock,
@@ -27,6 +26,7 @@ from dev_pipeline.models import (
     TicketSpec,
     story_workflow_id,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.signal_schemas import HUMAN_SIGNAL_NAMES
 from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows import DevPipelineWorkflow, TicketWorkflow
@@ -80,7 +80,13 @@ async def test_live_temporal_history_records_signals_and_reopen(
         )
         await handle.signal(
             DevPipelineWorkflow.promote_rule,
-            PromoteRuleRequest(rule_name="skill", automatic=False),
+            PromoteRuleRequest(
+                candidate_id="skill",
+                target="L0",
+                reason="history-signal",
+                evidence_citation="docs/knowledge/candidates/skill.md",
+                automatic=False,
+            ),
         )
         await handle.signal(DevPipelineWorkflow.authorize_test_deploy)
         await handle.signal(

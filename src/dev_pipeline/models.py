@@ -8,6 +8,7 @@ from typing import Literal
 
 from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
+from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.review import DualReviewRecord
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.verify import VerifyRecord
@@ -424,22 +425,6 @@ class PublishResult:
 
 
 @dataclass
-class RetroInput:
-    """Stub retro activity input. The stub must not write files."""
-
-    story_id: str
-    execution_id: str
-
-
-@dataclass
-class RetroResult:
-    """Stub retro result. Real daily/candidate writes are later tickets."""
-
-    recorded: bool = True
-    detail: str = "stub-retro"
-
-
-@dataclass
 class ReviewOverride:
     """Human review_override signal, routed by the parent to one child.
 
@@ -454,14 +439,6 @@ class ReviewOverride:
     decided_by: str = ""
     reason: str = ""
     decided_at: str = ""
-
-
-@dataclass
-class PromoteRuleRequest:
-    """Human promote_rule signal. Automatic promotion is always rejected."""
-
-    rule_name: str
-    automatic: bool = False
 
 
 @dataclass
@@ -633,6 +610,8 @@ class PipelineSnapshot:
     ticket_list_submitted_by: str = ""
     ticket_list_submitted_at: str = ""
     jira_tickets: JiraTicketWriteSnapshot | None = None
+    retro: RetroRecord | None = None
+    promotion: PromotionRecord | None = None
 
 
 @dataclass

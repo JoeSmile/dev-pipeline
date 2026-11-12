@@ -82,11 +82,11 @@ stateDiagram-v2
 | HumanGate | 人工 Signal `review_override`：放行进 Verifying、打回仅该 Ticket 回 Implementing、否决使该 Child 进 Blocked（父执行不自动 Blocked）。决策写入 `review.override`。未出 Signal 不越过，无超时自动放行 |
 | Verifying | 至少一行「红线 ↔ 证据」，命令或现象可复现；证据 UTF-8 落在授权 worktree，记录在 `snapshot.verify`。dry-run 或仅 History 不能标 PASS。未守住红线只打回该 Ticket。全部未移除 Ticket 过线且已授权后，由父执行从聚合 Implementing 进入 TestDeploying |
 | TestDeploying | 已收到 authorize_test_deploy；测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
-| Retro | 写入 `docs/knowledge/daily/YYYY-MM-DD.md`，更新 candidates；全局草案待签批。当前为桩，不写文件 |
+| Retro | 写入 `docs/knowledge/daily/YYYY-MM-DD.md`（追加，不覆盖同日其他 Story），更新 candidates 的命中 / 硬近失；不得自动升 L0 / 全局 Skill。记录在 `snapshot.retro`。写完进 Done |
 
 ## 人工 Signal
 
-`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 在本骨架中只记录请求，自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
+`lock_scope`、`decide_scheme`、`approve_spike`、`review_override`、`authorize_test_deploy`、`promote_rule`、`retry_ticket`、`drop_ticket`、`abort`、`reopen`（重开必须新 execution）。`promote_rule` 必填候选标识、晋升目标（L0 / 全局 Skill）、理由与证据引用；合法且已达默认条件（命中 N≥2 或一次硬近失）时写入 candidate 并记入 `snapshot.promotion`。自动晋升一律拒绝。没有 `authorize_test_deploy` 不得发布到测试环境。错误阶段或非法 payload 被拒绝时记入 `last_rejection`，不改变当前阶段。字段、必填与拒绝条件见 README 表格与 `src/dev_pipeline/signal_schemas.py`。
 
 进度可见性（[DP-47](https://weiperfect007.atlassian.net/browse/DP-47)）目前是父执行上的查询快照：当前阶段、正在等待的 Signal、各 Ticket 状态、测试部署状态、已锁范围（`scope`：要解决 / 不做什么 / 锁定人 / 时间），以及 [DP-12](https://weiperfect007.atlassian.net/browse/DP-12) 的已花费预算（`budget`：已用 / 限额 / 剩余 / `last_breach`）。写码交付物挂在 `tickets[].deliverables`。完整心跳尚未实现。
 

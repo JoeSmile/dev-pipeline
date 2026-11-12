@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from typing import Any
 
 from temporalio import workflow
+from temporalio.common import RetryPolicy
 
 from dev_pipeline.models import (
     RETRIEVAL_STUB,
     AbortRequest,
     ApproveSpikeRequest,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     SchemeDecision,
@@ -20,17 +21,22 @@ from dev_pipeline.models import (
     format_scope_lock_time,
     has_red_line_hypothesis,
 )
+from dev_pipeline.retro import PromoteApplyInput, PromoteRuleRequest
 from dev_pipeline.signal_schemas import parse_human_signal
 from dev_pipeline.stages import ParentStage, TicketStage
 from dev_pipeline.ticket_list import is_complete_ticket_list
 from dev_pipeline.transitions import can_enter_test_deploying
 from dev_pipeline.workflows.parent_state import ParentState
 
+with workflow.unsafe.imports_passed_through():
+    from dev_pipeline.activities.retro import apply_promote_rule
+
 _REOPEN_SAME_ID = "reopen 必须使用新的 execution_id 启动新的父执行，不能在已损坏的本次执行上恢复。"
 _REOPEN_NOT_TERMINAL = "当前执行尚未结束，不能 reopen。请先 abort。"
 _REOPEN_IN_FLIGHT = "正在处理 reopen，请等待新执行启动完成。"
 _PROMOTE_AUTO_REJECTED = "promote_rule 自动晋升已拒绝；全局规则不得静默升级。"
-_PROMOTE_RECORDED = "promote_rule 已记录，本骨架不执行晋升（拒绝自动生效）。"
+_PROMOTE_ACTIVITY_TIMEOUT = timedelta(seconds=60)
+_PROMOTE_NO_RETRY = RetryPolicy(maximum_attempts=1)
 
 
 class ParentSignalMixin:
@@ -167,8 +173,8 @@ class ParentSignalMixin:
         self._state.reopen_status = f"正在启动新执行 {parsed.execution_id}"
 
     @workflow.signal
-    def promote_rule(self, payload: Any) -> None:
-        """Record a promote_rule request. Automatic promotion is always refused."""
+    async def promote_rule(self, payload: Any) -> None:
+        """Promote a candidate after a legal human Signal. Automatic promotion is refused."""
         parsed = self._parsed("promote_rule", payload)
         if parsed is None:
             return
@@ -177,7 +183,29 @@ class ParentSignalMixin:
             self._state.promote_status = _PROMOTE_AUTO_REJECTED
             self._state.record_illegal(_PROMOTE_AUTO_REJECTED)
             return
-        self._state.promote_status = _PROMOTE_RECORDED
+        if self._state.input is None:
+            self._reject("promote_rule", "执行尚未初始化，不能晋升")
+            return
+        stamped = PromoteRuleRequest(
+            candidate_id=parsed.candidate_id,
+            target=parsed.target,
+            reason=parsed.reason,
+            evidence_citation=parsed.evidence_citation,
+            automatic=False,
+            decided_at=format_scope_lock_time(workflow.now()),
+        )
+        result = await workflow.execute_activity(
+            apply_promote_rule,
+            PromoteApplyInput(request=stamped, config_root=self._state.input.config_root),
+            start_to_close_timeout=_PROMOTE_ACTIVITY_TIMEOUT,
+            retry_policy=_PROMOTE_NO_RETRY,
+        )
+        if not result.promoted:
+            self._reject("promote_rule", result.reason)
+            self._state.promote_status = result.reason
+            return
+        self._state.promotion = result.record
+        self._state.promote_status = f"已晋升为{stamped.target}"
 
     @workflow.signal
     def authorize_test_deploy(self, payload: Any = None) -> None:

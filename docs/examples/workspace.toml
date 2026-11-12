@@ -5,3 +5,8 @@
 # 缺少本文件时默认未授权，拒绝任何写入。
 # 本票不授权自动 push / 合并，也不使用 Cursor CLI 的 --worktree。
 authorized_root = "D:\\pipeline-worktrees"
+
+# 可选。Story Retro 把日记和 candidate 写到 <knowledge_root>/docs/knowledge/。
+# 必须是已存在的绝对目录。省略时依次回退到 authorized_root、config-root。
+# 不要把流水线仓库本身当成目标 Story 的知识根目录。
+# knowledge_root = "D:\\pipeline-knowledge"

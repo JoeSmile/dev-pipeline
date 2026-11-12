@@ -26,11 +26,11 @@ from tests.workflow_helpers import (
 from dev_pipeline.constants import DEFAULT_TASK_QUEUE, WAITING_AUTHORIZE_TEST_DEPLOY
 from dev_pipeline.models import (
     AbortRequest,
-    PromoteRuleRequest,
     TicketInput,
     TicketResult,
     ticket_workflow_id,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.workflows import DevPipelineWorkflow, TicketWorkflow
 
@@ -170,7 +170,7 @@ async def test_retry_ticket_restarts_failed_child(
         await worker.__aexit__(None, None, None)
 
 
-async def test_promote_rule_records_request_and_rejects_automatic(
+async def test_promote_rule_rejects_automatic_and_unknown_candidate(
     workflow_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
     payload = story(tmp_config_root, [complete_ticket("A")])
@@ -182,7 +182,13 @@ async def test_promote_rule_records_request_and_rejects_automatic(
         await wait_snapshot(handle, lambda item: started(item, "A"))
         await handle.signal(
             DevPipelineWorkflow.promote_rule,
-            PromoteRuleRequest(rule_name="global-skill", automatic=True),
+            PromoteRuleRequest(
+                candidate_id="global-skill",
+                target="全局 Skill",
+                reason="已有两次真实命中",
+                evidence_citation="docs/knowledge/candidates/global-skill.md",
+                automatic=True,
+            ),
         )
         snap = await wait_snapshot(
             handle,
@@ -194,16 +200,24 @@ async def test_promote_rule_records_request_and_rejects_automatic(
         assert "拒绝" in snap.last_illegal
         await handle.signal(
             DevPipelineWorkflow.promote_rule,
-            PromoteRuleRequest(rule_name="global-skill", automatic=False),
+            PromoteRuleRequest(
+                candidate_id="global-skill",
+                target="全局 Skill",
+                reason="已有两次真实命中",
+                evidence_citation="docs/knowledge/candidates/global-skill.md",
+                automatic=False,
+            ),
         )
         snap = await wait_snapshot(
             handle,
             lambda item: (
-                item.promote_rule_status is not None
-                and "已记录" in (item.promote_rule_status or "")
+                item.last_rejection is not None
+                and item.last_rejection.signal == "promote_rule"
+                and "未知候选" in item.last_rejection.reason
             ),
         )
-        assert "已记录" in (snap.promote_rule_status or "")
+        assert snap.promotion is None
+        assert "未知候选" in (snap.promote_rule_status or "")
         controller.release("implement", "A")
         await authorize_test_deploy(handle)
         result = await wait_terminal(handle)

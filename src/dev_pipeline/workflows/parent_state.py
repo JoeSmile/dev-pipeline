@@ -26,6 +26,7 @@ from dev_pipeline.models import (
     TicketSnapshot,
     TicketSpec,
 )
+from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
 from dev_pipeline.transitions import (
@@ -75,6 +76,8 @@ class ParentState:
         self.ticket_list_submitted_by = ""
         self.ticket_list_submitted_at = ""
         self.jira_tickets: JiraTicketWriteSnapshot | None = None
+        self.retro: RetroRecord | None = None
+        self.promotion: PromotionRecord | None = None
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -277,4 +280,6 @@ class ParentState:
             ticket_list_submitted_by=self.ticket_list_submitted_by,
             ticket_list_submitted_at=self.ticket_list_submitted_at,
             jira_tickets=self.jira_tickets,
+            retro=self.retro,
+            promotion=self.promotion,
         )

@@ -5,15 +5,12 @@ from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
 from dev_pipeline.activities.jira_tickets import persist_jira_tickets
 from dev_pipeline.activities.reopen import ReopenStarter
+from dev_pipeline.activities.retro import apply_promote_rule, write_retro_record
 from dev_pipeline.activities.review import review_ticket
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.activities.spike import load_spike_config, run_spike
 from dev_pipeline.activities.story_draft import normalize_story_draft
-from dev_pipeline.activities.stubs import (
-    implement_ticket,
-    publish_to_test_env,
-    write_retro_record,
-)
+from dev_pipeline.activities.stubs import implement_ticket, publish_to_test_env
 from dev_pipeline.activities.verify import verify_ticket
 from dev_pipeline.activities.workspace import claim_ticket_workspace
 
@@ -35,12 +32,14 @@ STUB_ACTIVITIES = (
     run_rag,
     run_model_call,
     publish_to_test_env,
+    apply_promote_rule,
     write_retro_record,
 )
 
 __all__ = [
     "STUB_ACTIVITIES",
     "ReopenStarter",
+    "apply_promote_rule",
     "apply_sandbox_write",
     "claim_ticket_workspace",
     "implement_ticket",

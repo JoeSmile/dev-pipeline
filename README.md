@@ -136,7 +136,7 @@ stateDiagram-v2
 | HumanGate | 仅阻断项或跨模块/范式漂移 | 放行 / 打回 / 否决（`review_override`）；决策写入 `tickets[].review.override`（人、动作、时间、可选理由）。未出 Signal 之前不自动越过，无超时自动放行（超时策略本期 OOS） |
 | Verifying | 验收步骤 + L0 红线 / 本 Story 局部约束 / 方案红线级假设 | 「红线 ↔ 证据」至少一行，命令/现象可复现，证据写入授权 worktree（UTF-8，字段见 DP-32），记录在 `snapshot.verify`。dry-run 或仅 History 不能标 PASS。未守住红线只打回该 Ticket 到 Implementing。全部未移除 Ticket 过线且已授权后，由父执行从聚合 `Implementing` 进入 `TestDeploying`，而不是直接 Retro |
 | TestDeploying | 全部未移除 Ticket 已验证过线，且已收到 `authorize_test_deploy` | 测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
-| Retro | 当日证据（git、Jira、Codex session、评审）与成功的测试部署 | `docs/knowledge/daily/YYYY-MM-DD.md`；candidate 更新；全局草案等签批 |
+| Retro | 当日证据（git、Jira、评审、成功的测试部署）已齐，且全部必做 Ticket 已验证过线 | `docs/knowledge/daily/YYYY-MM-DD.md`（按 `workflow.now()` 的 Asia/Shanghai 日期追加，不覆盖同日其他 Story）；candidate 更新命中 / 硬近失，但不自动升 L0 / 全局 Skill；记录在 `snapshot.retro`。写完进 Done |
 
 ## 人工 Signal
 
@@ -147,7 +147,7 @@ stateDiagram-v2
 - `approve_spike`：击穿红线且已有防护时，是否接受防护后继续；验证过或无防护失败时不使用该 Signal
 - `review_override`：阻断项或范式漂移放行/打回/否决
 - `authorize_test_deploy`：全部未移除 Ticket 过线后，确认测试环境发布
-- `promote_rule`：候选升 L0 / 全局 Skill（默认禁止自动升；本骨架仅记录请求，自动晋升一律拒绝）
+- `promote_rule`：候选升 L0 / 全局 Skill（默认条件：真实命中 N≥2 或一次硬近失，且必须人工 Signal；禁止自动升级）
 - `retry_ticket` / `drop_ticket`：重试失败 Ticket，或把它从清单中移除
 - `abort` / `reopen`：中止或重开同一 Ticket / Story（必须开新 execution，不复用已乱掉的一次）
 
@@ -165,7 +165,7 @@ stateDiagram-v2
 | `submit_tickets` | `TicketListSubmission` | `tickets`、`submitted_by` | TicketsReady，且清单尚未齐 | 缺字段、类型错误、清单未齐（缺目标/验收/依赖/I/O 契约、仍有待证、重复 id、未知依赖或成环）、阶段不对、清单已齐后再次提交 |
 | `review_override` | `ReviewOverride` | `ticket_id`、`decision`（`放行` / `打回` / `否决`，或 `approve` / `rework` / `reject`）、`decided_by`；可选 `reason`。忽略调用方传入的 `decided_at`，由 Workflow 用 `workflow.now()` 落时间 | 对应 Child 处于 HumanGate | 缺字段、类型错误、未知 Ticket、不在 HumanGate |
 | `authorize_test_deploy` | `AuthorizeTestDeployRequest`（无必填字段） | （无） | Implementing，且全部未移除 Ticket 已过线 | 阶段不对，或尚有 Ticket 未过线 / 失败未处理 |
-| `promote_rule` | `PromoteRuleRequest` | `rule_name` | 运行中任意阶段 | schema 错误记入 `last_rejection`；`automatic=true` 时 Signal 已接收，但晋升动作被拒绝并记录 |
+| `promote_rule` | `PromoteRuleRequest` | `candidate_id`（候选标识）、`target`（`L0` / `全局 Skill`）、`reason`（理由）、`evidence_citation`（证据引用）。也接受中文别名。忽略调用方传入的 `decided_at`，由 Workflow 用 `workflow.now()` 落时间 | 运行中任意阶段 | 缺字段、类型错误、未知目标、未知候选、未达晋升条件（N≥2 或一次硬近失）、缺少证据引用：记入 `last_rejection`，不晋升。`automatic=true` 时 Signal 已接收，但晋升动作被拒绝并记录 |
 | `abort` | `AbortRequest` | `reason` | 非 Done / Blocked | 缺字段、类型错误、已经结束 |
 | `reopen` | `ReopenRequest` | `execution_id`（非空且不同于当前） | Blocked 或 Done | 执行未结束（须先 abort）、id 非法、目标 workflow 已存在 |
 

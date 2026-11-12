@@ -1,11 +1,11 @@
 """Deterministic stub and coding activities used by the local worker.
 
-Publish and retro remain stubs: they do not call LLMs or talk to
-external systems. ``implement_ticket`` writes only inside an authorized
-worktree and does not call Cursor CLI. Dual review lives in
-``activities.review`` and verification lives in ``activities.verify``;
-both use a deterministic backend, not a live CLI. Tests may register
-replacements with the same activity names.
+Publish remains a TestDeploying stub: it does not call LLMs or talk to
+external systems. Story Retro lives in ``activities.retro``. ``implement_ticket``
+writes only inside an authorized worktree and does not call Cursor CLI.
+Dual review lives in ``activities.review`` and verification lives in
+``activities.verify``; both use a deterministic backend, not a live CLI.
+Tests may register replacements with the same activity names.
 """
 
 from temporalio import activity
@@ -15,8 +15,6 @@ from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
     PublishResult,
-    RetroInput,
-    RetroResult,
     TicketWorkInput,
 )
 from dev_pipeline.transitions import validate_publish_target
@@ -56,11 +54,3 @@ async def publish_to_test_env(request: PublishRequest) -> PublishResult:
         address=f"http://test.local/stories/{request.story_id}",
         detail="stub-test-deploy",
     )
-
-
-@activity.defn
-async def write_retro_record(payload: RetroInput) -> RetroResult:
-    """Record that retro would run. The stub itself writes no files."""
-
-    activity.logger.info("stub write_retro_record story=%s", payload.story_id)
-    return RetroResult(recorded=True, detail="stub-retro")

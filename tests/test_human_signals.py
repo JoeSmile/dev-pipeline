@@ -23,7 +23,6 @@ from tests.workflow_helpers import (
 from dev_pipeline.models import (
     AbortRequest,
     ApproveSpikeRequest,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     ScopeLock,
@@ -31,6 +30,7 @@ from dev_pipeline.models import (
     TicketSpec,
     story_workflow_id,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows import DevPipelineWorkflow
 
@@ -170,7 +170,13 @@ async def test_promote_rule_schema_error_differs_from_automatic_refusal(
         await wait_snapshot(handle, lambda item: started(item, "A"))
         await handle.signal(
             DevPipelineWorkflow.promote_rule,
-            PromoteRuleRequest(rule_name="skill", automatic=True),
+            PromoteRuleRequest(
+                candidate_id="skill",
+                target="L0",
+                reason="已有两次真实命中",
+                evidence_citation="docs/knowledge/candidates/skill.md",
+                automatic=True,
+            ),
         )
         snap = await wait_snapshot(
             handle,

@@ -9,7 +9,6 @@ from dev_pipeline.models import (
     AbortRequest,
     ApproveSpikeRequest,
     AuthorizeTestDeployRequest,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     SchemeDecision,
@@ -21,6 +20,7 @@ from dev_pipeline.models import (
     is_complete_scheme_decision,
     is_complete_scope_lock,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.signal_schemas import parse_human_signal
 
 
@@ -83,11 +83,18 @@ def test_missing_required_fields_and_type_errors_are_rejected() -> None:
         {"ticket_id": "A", "decision": "maybe", "decided_by": "tester"},
     )
     assert reason is not None and "放行、打回、否决" in reason
-    _, reason = parse_human_signal(
-        "review_override", {"ticket_id": "A", "decision": "approve"}
-    )
+    _, reason = parse_human_signal("review_override", {"ticket_id": "A", "decision": "approve"})
     assert reason is not None and "缺少必填字段" in reason and "decided_by" in reason
-    _, reason = parse_human_signal("promote_rule", {"rule_name": "r", "automatic": "yes"})
+    _, reason = parse_human_signal(
+        "promote_rule",
+        {
+            "candidate_id": "r",
+            "target": "L0",
+            "reason": "已有两次命中",
+            "evidence_citation": "daily.md",
+            "automatic": "yes",
+        },
+    )
     assert reason is not None and "必须是 bool" in reason
 
 
@@ -207,9 +214,42 @@ def test_review_override_and_reopen_accept_valid_objects() -> None:
     parsed, reason = parse_human_signal("reopen", ReopenRequest(execution_id="exec-2"))
     assert reason is None and isinstance(parsed, ReopenRequest)
     parsed, reason = parse_human_signal(
-        "promote_rule", PromoteRuleRequest(rule_name="skill", automatic=False)
+        "promote_rule",
+        PromoteRuleRequest(
+            candidate_id="skill",
+            target="L0",
+            reason="已有两次真实命中",
+            evidence_citation="docs/knowledge/candidates/skill.md",
+            automatic=False,
+        ),
     )
     assert reason is None and isinstance(parsed, PromoteRuleRequest)
+    assert parsed.candidate_id == "skill"
+    assert parsed.target == "L0"
+    parsed, reason = parse_human_signal(
+        "promote_rule",
+        {
+            "候选标识": "skill-2",
+            "晋升目标": "全局 Skill",
+            "理由": "一次硬近失",
+            "证据引用": "docs/knowledge/candidates/skill-2.md",
+        },
+    )
+    assert reason is None and isinstance(parsed, PromoteRuleRequest)
+    assert parsed.candidate_id == "skill-2"
+    assert parsed.target == "全局 Skill"
+    _, reason = parse_human_signal("promote_rule", {"candidate_id": "x"})
+    assert reason is not None and "缺少必填字段" in reason
+    _, reason = parse_human_signal(
+        "promote_rule",
+        {
+            "candidate_id": "x",
+            "target": "production",
+            "reason": "no",
+            "evidence_citation": "cite",
+        },
+    )
+    assert reason is not None and "L0 或 全局 Skill" in reason
 
 
 def test_format_scope_lock_time_is_utc_zulu() -> None:

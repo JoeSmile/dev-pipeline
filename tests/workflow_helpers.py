@@ -25,6 +25,7 @@ from dev_pipeline.models import (
     TicketSpec,
     story_workflow_id,
 )
+from dev_pipeline.retro import PromoteRuleRequest
 from dev_pipeline.stages import ParentStage
 from dev_pipeline.workflows import DevPipelineWorkflow, TicketWorkflow
 
@@ -73,6 +74,24 @@ def review_override(
         decision=normalized,
         decided_by=decided_by,
         reason=reason,
+    )
+
+
+def promote_rule_request(
+    candidate_id: str = "cand-1",
+    *,
+    target: str = "L0",
+    reason: str = "已有两次真实命中",
+    evidence_citation: str = "docs/knowledge/candidates/cand-1.md",
+    automatic: bool = False,
+) -> PromoteRuleRequest:
+    """Build a schema-valid promote_rule payload for tests."""
+    return PromoteRuleRequest(
+        candidate_id=candidate_id,
+        target=target,
+        reason=reason,
+        evidence_citation=evidence_citation,
+        automatic=automatic,
     )
 
 

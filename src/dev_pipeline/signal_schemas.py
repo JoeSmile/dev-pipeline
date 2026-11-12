@@ -17,7 +17,6 @@ from dev_pipeline.models import (
     ApproveSpikeRequest,
     AuthorizeTestDeployRequest,
     HypothesisGrade,
-    PromoteRuleRequest,
     ReopenRequest,
     ReviewOverride,
     SchemeDecision,
@@ -27,6 +26,7 @@ from dev_pipeline.models import (
     TicketSpec,
     has_red_line_hypothesis,
 )
+from dev_pipeline.retro import PromoteRuleRequest, normalize_promotion_target
 from dev_pipeline.review import normalize_review_decision
 from dev_pipeline.ticket_list import ticket_list_completion_error
 
@@ -67,8 +67,8 @@ SCHEMAS: dict[str, SignalSchema] = {
     ),
     "promote_rule": SignalSchema(
         PromoteRuleRequest,
-        ("rule_name",),
-        nonempty=("rule_name",),
+        ("candidate_id", "target", "reason", "evidence_citation"),
+        nonempty=("candidate_id", "target", "reason", "evidence_citation"),
         bool_fields=("automatic",),
     ),
     "authorize_test_deploy": SignalSchema(AuthorizeTestDeployRequest, ()),
@@ -117,6 +117,10 @@ def _parse_known_signal(
         mapping.pop("retrieval", None)
     if signal == "review_override" and not isinstance(payload, dict):
         mapping.pop("decided_at", None)
+    if signal == "promote_rule":
+        mapping = _normalize_promote_mapping(mapping)
+        if not isinstance(payload, dict):
+            mapping.pop("decided_at", None)
     missing = [name for name in schema.required if name not in mapping or mapping[name] is None]
     if missing:
         return None, f"{signal} 缺少必填字段: {', '.join(missing)}"
@@ -150,8 +154,7 @@ def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> s
     if signal == "review_override":
         if normalize_review_decision(mapping.get("decision")) is None:
             return (
-                "review_override 的 decision 必须是 放行、打回、否决"
-                "（或 approve、rework、reject）"
+                "review_override 的 decision 必须是 放行、打回、否决（或 approve、rework、reject）"
             )
     if signal == "decide_scheme":
         hypo_error = _hypotheses_error(mapping.get("hypotheses"))
@@ -162,8 +165,22 @@ def _type_error(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> s
             return conflict
         if "tickets" in mapping and mapping["tickets"] is not None:
             return _tickets_error(mapping["tickets"])
-    if signal == "promote_rule" and "automatic" in mapping and mapping["automatic"] is None:
-        return "promote_rule 的 automatic 必须是 bool"
+    if signal == "promote_rule":
+        if (
+            "automatic" in mapping
+            and mapping["automatic"] is not None
+            and not isinstance(mapping["automatic"], bool)
+        ):
+            return "promote_rule 的 automatic 必须是 bool"
+        if "automatic" in mapping and mapping["automatic"] is None:
+            return "promote_rule 的 automatic 必须是 bool"
+        target = mapping.get("target")
+        if (
+            isinstance(target, str)
+            and target.strip()
+            and normalize_promotion_target(target) is None
+        ):
+            return "promote_rule 的 target 必须是 L0 或 全局 Skill"
     if signal == "submit_tickets":
         return _submit_tickets_error(mapping.get("tickets"))
     return None
@@ -285,8 +302,13 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
         )
     if signal == "promote_rule":
         automatic = mapping.get("automatic", False)
+        target = normalize_promotion_target(mapping["target"])
+        assert target is not None
         return PromoteRuleRequest(
-            rule_name=str(mapping["rule_name"]).strip(),
+            candidate_id=str(mapping["candidate_id"]).strip(),
+            target=target,
+            reason=str(mapping["reason"]).strip(),
+            evidence_citation=str(mapping["evidence_citation"]).strip(),
             automatic=bool(automatic),
         )
     if signal == "submit_tickets":
@@ -295,6 +317,27 @@ def _build(signal: str, schema: SignalSchema, mapping: dict[str, Any]) -> object
             submitted_by=str(mapping["submitted_by"]).strip(),
         )
     return AuthorizeTestDeployRequest()
+
+
+_PROMOTE_ALIASES = {
+    "候选标识": "candidate_id",
+    "晋升目标": "target",
+    "理由": "reason",
+    "证据引用": "evidence_citation",
+}
+
+
+def _normalize_promote_mapping(mapping: dict[str, Any]) -> dict[str, Any]:
+    """Copy a promote_rule mapping and accept Chinese field aliases."""
+
+    normalized = dict(mapping)
+    for alias, name in _PROMOTE_ALIASES.items():
+        current = normalized.get(name)
+        if current is None or (isinstance(current, str) and not current.strip()):
+            if alias in normalized:
+                normalized[name] = normalized[alias]
+    normalized.pop("decided_at", None)
+    return normalized
 
 
 def _build_tickets(raw: object) -> list[TicketSpec]:

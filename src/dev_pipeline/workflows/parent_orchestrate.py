@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
@@ -19,7 +19,6 @@ from dev_pipeline.models import (
     PipelineResult,
     PublishRequest,
     PublishResult,
-    RetroInput,
     ScopeLock,
     SpikeInput,
     SpikeRecord,
@@ -30,6 +29,13 @@ from dev_pipeline.models import (
     format_scope_lock_time,
     is_complete_scope_lock,
     red_line_statements,
+)
+from dev_pipeline.retro import (
+    RetroEvidenceLine,
+    RetroHypothesis,
+    RetroInput,
+    RetroTicketEvidence,
+    daily_note_date,
 )
 from dev_pipeline.stages import ParentStage, TestDeployStatus
 from dev_pipeline.topology import eligible_ticket_ids
@@ -47,9 +53,10 @@ from dev_pipeline.workflows.ticket import TicketWorkflow
 
 with workflow.unsafe.imports_passed_through():
     from dev_pipeline.activities.config import validate_config_root
+    from dev_pipeline.activities.retro import write_retro_record
     from dev_pipeline.activities.spike import load_spike_config, run_spike
     from dev_pipeline.activities.story_draft import normalize_story_draft
-    from dev_pipeline.activities.stubs import publish_to_test_env, write_retro_record
+    from dev_pipeline.activities.stubs import publish_to_test_env
 
 ACTIVITY_TIMEOUT = timedelta(seconds=60)
 NO_RETRY = RetryPolicy(maximum_attempts=1)
@@ -364,12 +371,19 @@ class ParentOrchestrationMixin:
         state.test_deploy_status = TestDeployStatus.SUCCEEDED
         state.test_deploy_address = published.address
         await self._move(ParentStage.RETRO, "test_deploy_success")
-        await workflow.execute_activity(
-            write_retro_record,
-            RetroInput(story_id=state.input.story_id, execution_id=state.input.execution_id),
-            start_to_close_timeout=ACTIVITY_TIMEOUT,
-            retry_policy=NO_RETRY,
-        )
+        now = workflow.now()
+        try:
+            retro_result = await workflow.execute_activity(
+                write_retro_record,
+                _retro_input(state, now),
+                start_to_close_timeout=ACTIVITY_TIMEOUT,
+                retry_policy=NO_RETRY,
+            )
+        except ActivityError as exc:
+            return await self._fail_retro(f"Retro 写入失败，不能进入 Done: {exc}")
+        if not retro_result.recorded:
+            return await self._fail_retro("Retro 写入失败，不能进入 Done")
+        state.retro = retro_result.record
         if state.abort_requested:
             return await self._block(state.abort_reason)
         await self._move(ParentStage.DONE, "retro_written")
@@ -378,6 +392,10 @@ class ParentOrchestrationMixin:
     async def _fail_test_deploy(self, reason: str) -> PipelineResult:
         self._state.test_deploy_status = TestDeployStatus.FAILED
         await self._move(ParentStage.BLOCKED, "test_deploy_failure")
+        return await self._finish_terminal(self._state.finish_blocked(reason))
+
+    async def _fail_retro(self, reason: str) -> PipelineResult:
+        await self._move(ParentStage.BLOCKED, "retro_write_failure")
         return await self._finish_terminal(self._state.finish_blocked(reason))
 
     async def _block(self, reason: str) -> PipelineResult:
@@ -399,3 +417,58 @@ class ParentOrchestrationMixin:
                 await cancel_ticket_handle(handle)
             except TemporalError:
                 pass
+
+
+def _retro_input(state: ParentState, now: object) -> RetroInput:
+    """Build the Retro activity payload from parent state and workflow.now()."""
+
+    payload = state.input
+    assert payload is not None
+    tickets: list[RetroTicketEvidence] = []
+    for item in state.ticket_list():
+        lines: list[RetroEvidenceLine] = []
+        evidence_path = ""
+        verify_passed = False
+        if item.verify is not None:
+            verify_passed = item.verify.passed
+            evidence_path = item.verify.evidence_path
+            for line in item.verify.lines:
+                lines.append(
+                    RetroEvidenceLine(
+                        red_line=line.red_line,
+                        result=line.result,
+                        evidence_path=line.evidence_path or evidence_path,
+                        command_or_phenomenon=line.command_or_phenomenon,
+                    )
+                )
+        requires_gate = bool(item.review is not None and item.review.requires_human_gate)
+        tickets.append(
+            RetroTicketEvidence(
+                ticket_id=item.ticket_id,
+                stage=item.stage.value,
+                dropped=item.stage.value == "Dropped",
+                verify_passed=verify_passed,
+                verify_evidence_path=evidence_path,
+                verify_lines=lines,
+                requires_human_gate=requires_gate,
+            )
+        )
+    hypotheses: list[RetroHypothesis] = []
+    if state.scheme is not None:
+        for hypothesis in state.scheme.hypotheses:
+            hypotheses.append(
+                RetroHypothesis(statement=hypothesis.statement, grade=hypothesis.grade)
+            )
+    assert isinstance(now, datetime)
+    return RetroInput(
+        story_id=payload.story_id,
+        execution_id=payload.execution_id,
+        config_root=payload.config_root,
+        daily_date=daily_note_date(now),
+        written_at=format_scope_lock_time(now),
+        test_deploy_address=state.test_deploy_address or "",
+        test_deploy_status=state.test_deploy_status.value,
+        summary=payload.summary,
+        tickets=tickets,
+        hypotheses=hypotheses,
+    )

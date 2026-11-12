@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from temporalio import activity
 
+from dev_pipeline.activities.retro import apply_promote_rule
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
 from dev_pipeline.deliverables import stub_ticket_deliverables
@@ -25,8 +26,6 @@ from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
     PublishResult,
-    RetroInput,
-    RetroResult,
     ReviewFindings,
     SpikeConfig,
     SpikeInput,
@@ -37,6 +36,7 @@ from dev_pipeline.models import (
     TicketWorkInput,
     WorkspaceClaim,
 )
+from dev_pipeline.retro import RetroInput, RetroResult
 from dev_pipeline.review import ReviewWorkerReport, ReviewWorkInput, worker_report_from_legacy
 from dev_pipeline.ticket_list import (
     JiraTicketPersistInput,
@@ -340,5 +340,6 @@ class StubController:
             mark_jira_mirror_lag,
             persist_jira_tickets,
             publish_to_test_env,
+            apply_promote_rule,
             write_retro_record,
         )
