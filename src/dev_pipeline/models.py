@@ -145,6 +145,7 @@ class StoryInput:
     intake: IntakeRecord | None = None
     inherited_scope: ScopeLock | None = None
     auto_start_children: bool = False
+    sandbox_write: SandboxWriteSpec | None = None
 
 
 HypothesisGrade = Literal["红线级", "局部", "候选"]
@@ -257,9 +258,58 @@ class SpikeRecord:
     source: str = "待证默认"
 
 
+SandboxStatus = Literal["unauthorized", "authorized", "allowed", "rejected"]
+
+
+@dataclass
+class SandboxWriteSpec:
+    """An explicit coding-sandbox write request reserved until the coding Worker lands.
+
+    Relative paths are resolved against the authorized worktree. Absolute paths
+    are still checked against that same boundary. This is not the DP-21
+    deliverable list.
+    """
+
+    path: str
+    content: str = ""
+
+
+@dataclass
+class SandboxRecord:
+    """Queryable authorization-boundary outcome on the existing snapshot."""
+
+    authorized_worktree: str = ""
+    status: SandboxStatus = "unauthorized"
+    requested_path: str = ""
+    reason: str = ""
+
+
+@dataclass
+class SandboxWriteInput:
+    """Activity input for a guarded sandbox write. Contains no secrets."""
+
+    ticket_id: str
+    execution_id: str
+    story_id: str
+    config_root: str = ""
+    path: str = ""
+    content: str = ""
+    authorized_worktree: str = ""
+
+
+@dataclass
+class SandboxWriteResult:
+    """Outcome of a guarded sandbox write. ``allowed`` must not be ignored."""
+
+    allowed: bool
+    record: SandboxRecord
+    written_path: str = ""
+
+
 @dataclass
 class TicketInput:
     """Start payload for one TicketWorkflow child."""
+
 
     ticket_id: str
     execution_id: str
@@ -267,6 +317,7 @@ class TicketInput:
     config_root: str
     parent_workflow_id: str
     depends_on: list[str] = field(default_factory=list)
+    sandbox_write: SandboxWriteSpec | None = None
 
 
 @dataclass
@@ -276,6 +327,7 @@ class TicketWorkInput:
     ticket_id: str
     execution_id: str
     story_id: str
+    config_root: str = ""
 
 
 @dataclass
@@ -421,8 +473,11 @@ class ReopenStartResult:
 class WorkspaceClaim:
     """Recorded workspace / branch / PR-like identity for one ticket execution.
 
-    This is a side-effect claim, not a real git worktree or GitHub PR.
     Identifiers are derived from ``ticket_id + execution_id``.
+    ``authorized_worktree`` is the absolute path the coding sandbox may write
+    to. An empty value means unauthorized: no writes are allowed.
+    This is not a GitHub PR, and this ticket does not create a Cursor CLI
+    ``--worktree`` checkout.
     """
 
     ticket_id: str
@@ -430,6 +485,7 @@ class WorkspaceClaim:
     workspace_id: str
     branch_name: str
     pr_token: str
+    authorized_worktree: str = ""
 
 
 @dataclass
@@ -440,6 +496,7 @@ class TicketStateUpdate:
     stage: TicketStage
     unhandled_failure: bool = False
     detail: str = ""
+    sandbox: SandboxRecord | None = None
 
 
 @dataclass
@@ -475,6 +532,7 @@ class TicketSnapshot:
     child_created: bool = False
     unhandled_failure: bool = False
     detail: str = ""
+    sandbox: SandboxRecord | None = None
 
 
 @dataclass
@@ -537,6 +595,7 @@ class TicketResult:
     execution_id: str
     stage: TicketStage
     detail: str = ""
+    sandbox: SandboxRecord | None = None
 
 
 def ticket_workflow_id(ticket_id: str, execution_id: str) -> str:

@@ -26,6 +26,10 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.spike_config",
         "dev_pipeline.jira_config",
         "dev_pipeline.jira_client",
+        "dev_pipeline.sandbox",
+        "dev_pipeline.coding_cli",
+        "dev_pipeline.workspace_config",
+        "dev_pipeline.workspace_auth",
     }
 )
 FORBIDDEN_CALLS = frozenset(
@@ -110,11 +114,23 @@ def test_workflow_modules_have_no_forbidden_imports_or_io() -> None:
 
 
 def test_workflow_source_does_not_mention_llm_clients() -> None:
-    banned = ("openai", "anthropic", "httpx", "ChatCompletion", "CURSOR_API_KEY")
+    banned = (
+        "openai",
+        "anthropic",
+        "httpx",
+        "ChatCompletion",
+        "CURSOR_API_KEY",
+        "AsyncOpenAI",
+        "Anthropic",
+        "--api-key",
+        "subprocess",
+        "cursor-agent",
+    )
     for path in _module_files():
         text = path.read_text(encoding="utf-8")
         for token in banned:
             assert token not in text, f"{path.name} contains {token}"
+        assert "agent -p" not in text, f"{path.name} invokes Cursor CLI"
 
 
 def _call_name(func: ast.expr) -> str:

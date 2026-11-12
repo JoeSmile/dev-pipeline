@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from temporalio.testing import ActivityEnvironment
 
@@ -19,8 +21,13 @@ from dev_pipeline.workspace import (
 )
 
 
-def _work(ticket_id: str, execution_id: str) -> TicketWorkInput:
-    return TicketWorkInput(ticket_id=ticket_id, execution_id=execution_id, story_id="STORY")
+def _work(ticket_id: str, execution_id: str, config_root: Path | None = None) -> TicketWorkInput:
+    return TicketWorkInput(
+        ticket_id=ticket_id,
+        execution_id=execution_id,
+        story_id="STORY",
+        config_root="" if config_root is None else str(config_root),
+    )
 
 
 def test_second_claim_returns_first_and_does_not_increment_created_count() -> None:
@@ -88,3 +95,39 @@ async def test_production_stubs_reuse_the_same_claim() -> None:
         assert claim_workspace(payload) == first
     finally:
         reset_default_claim_store()
+
+
+def test_authorized_worktree_is_reused_for_the_same_key(tmp_path: Path) -> None:
+    from tests.sandbox_fixtures import write_workspace_toml
+
+    from dev_pipeline.workspace_auth import resolve_workspace_claim
+
+    config = tmp_path / "config"
+    config.mkdir()
+    root = tmp_path / "authorized"
+    write_workspace_toml(config, root)
+    store = WorkspaceClaimStore()
+    first = resolve_workspace_claim(_work("T1", "exec-1", config), store=store)
+    second = resolve_workspace_claim(_work("T1", "exec-1", config), store=store)
+    other = resolve_workspace_claim(_work("T1", "exec-2", config), store=store)
+    assert first.authorized_worktree == str(root / "T1" / "exec-1")
+    assert second.authorized_worktree == first.authorized_worktree
+    assert store.created_count("T1", "exec-1") == 1
+    assert other.authorized_worktree == str(root / "T1" / "exec-2")
+    assert other.authorized_worktree != first.authorized_worktree
+    assert (root / "T1" / "exec-1").is_dir()
+    assert (root / "T1" / "exec-2").is_dir()
+
+
+def test_unsafe_ticket_id_is_rejected(tmp_path: Path) -> None:
+    from tests.sandbox_fixtures import write_workspace_toml
+
+    from dev_pipeline.errors import WorkspaceConfigError
+    from dev_pipeline.workspace_auth import resolve_workspace_claim
+
+    config = tmp_path / "config"
+    config.mkdir()
+    write_workspace_toml(config, tmp_path / "authorized")
+    store = WorkspaceClaimStore()
+    with pytest.raises(WorkspaceConfigError, match="路径分隔"):
+        resolve_workspace_claim(_work("..", "exec-1", config), store=store)

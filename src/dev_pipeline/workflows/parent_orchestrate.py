@@ -323,6 +323,7 @@ class ParentOrchestrationMixin:
                 config_root=payload.config_root,
                 parent_workflow_id=workflow.info().workflow_id,
                 depends_on=list(spec.depends_on),
+                sandbox_write=payload.sandbox_write,
             ),
             parent_close_policy=ParentClosePolicy.TERMINATE,
             cancellation_type=ChildWorkflowCancellationType.TRY_CANCEL,

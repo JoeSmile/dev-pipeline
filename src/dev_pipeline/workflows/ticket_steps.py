@@ -10,6 +10,8 @@ from temporalio.exceptions import ActivityError, is_cancelled_exception
 
 from dev_pipeline.models import (
     ReviewOverride,
+    SandboxRecord,
+    SandboxWriteInput,
     TicketInput,
     TicketResult,
     TicketStateUpdate,
@@ -20,6 +22,7 @@ from dev_pipeline.stages import TicketStage
 from dev_pipeline.transitions import ChildGuardContext, assert_legal_transition
 
 with workflow.unsafe.imports_passed_through():
+    from dev_pipeline.activities.sandbox import apply_sandbox_write
     from dev_pipeline.activities.stubs import implement_ticket, review_ticket, verify_ticket
     from dev_pipeline.activities.workspace import claim_ticket_workspace
 
@@ -46,6 +49,7 @@ class TicketRuntime:
         self.aborted = False
         self.dependencies_verified = False
         self.detail = ""
+        self.sandbox: SandboxRecord | None = None
 
     def stopped(self) -> bool:
         """Return True when the child should leave the work loop."""
@@ -70,6 +74,7 @@ class TicketRuntime:
             ticket_id=self.input.ticket_id,
             execution_id=self.input.execution_id,
             story_id=self.input.story_id,
+            config_root=self.input.config_root,
         )
 
     def result(self) -> TicketResult:
@@ -80,6 +85,7 @@ class TicketRuntime:
             execution_id=self.input.execution_id,
             stage=self.stage,
             detail=self.detail,
+            sandbox=self.sandbox,
         )
 
 
@@ -96,6 +102,7 @@ async def notify_parent(runtime: TicketRuntime, *, unhandled_failure: bool = Fal
             stage=runtime.stage,
             unhandled_failure=failed,
             detail=runtime.detail,
+            sandbox=runtime.sandbox,
         ),
     )
 
@@ -134,14 +141,39 @@ async def finish_stopped(runtime: TicketRuntime) -> TicketResult:
 
 
 async def run_implement(runtime: TicketRuntime) -> None:
-    """Claim the ticket workspace, then run the implement stub."""
+    """Claim the ticket workspace, apply an optional sandbox write, then implement."""
     work = runtime.work_input()
-    await workflow.execute_activity(
+    claim = await workflow.execute_activity(
         claim_ticket_workspace,
         work,
         start_to_close_timeout=CLAIM_TIMEOUT,
         retry_policy=CLAIM_RETRY,
     )
+    runtime.sandbox = SandboxRecord(
+        authorized_worktree=claim.authorized_worktree,
+        status="authorized" if claim.authorized_worktree else "unauthorized",
+    )
+    if runtime.input is not None and runtime.input.sandbox_write is not None:
+        wrote = await workflow.execute_activity(
+            apply_sandbox_write,
+            SandboxWriteInput(
+                ticket_id=work.ticket_id,
+                execution_id=work.execution_id,
+                story_id=work.story_id,
+                config_root=work.config_root,
+                path=runtime.input.sandbox_write.path,
+                content=runtime.input.sandbox_write.content,
+                authorized_worktree=claim.authorized_worktree,
+            ),
+            start_to_close_timeout=ACTIVITY_TIMEOUT,
+            retry_policy=NO_RETRY,
+        )
+        runtime.sandbox = wrote.record
+        if not wrote.allowed:
+            runtime.detail = wrote.record.reason or "sandbox write rejected"
+            runtime.move(TicketStage.FAILED, "activity_failed")
+            await notify_parent(runtime, unhandled_failure=True)
+            return
     result = await workflow.execute_activity(
         implement_ticket,
         work,

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from temporalio import activity
 
+from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
 from dev_pipeline.jira_mirror import (
     InMemoryJira,
@@ -42,6 +43,7 @@ from dev_pipeline.ticket_list import (
 )
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace import WorkspaceClaimStore, claim_workspace
+from dev_pipeline.workspace_auth import resolve_workspace_claim
 
 
 async def _await_gate(event: asyncio.Event) -> None:
@@ -172,7 +174,7 @@ class StubController:
 
         @activity.defn(name="claim_ticket_workspace")
         async def claim_ticket_workspace(payload: TicketWorkInput) -> WorkspaceClaim:
-            return claim_workspace(payload, store=controller.workspace)
+            return resolve_workspace_claim(payload, store=controller.workspace)
 
         @activity.defn(name="implement_ticket")
         async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
@@ -269,6 +271,7 @@ class StubController:
             load_spike_config,
             run_spike,
             claim_ticket_workspace,
+            apply_sandbox_write,
             implement_ticket,
             review_ticket,
             verify_ticket,

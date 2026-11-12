@@ -5,6 +5,7 @@ from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
 from dev_pipeline.activities.jira_tickets import persist_jira_tickets
 from dev_pipeline.activities.reopen import ReopenStarter
+from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.activities.spike import load_spike_config, run_spike
 from dev_pipeline.activities.story_draft import normalize_story_draft
 from dev_pipeline.activities.stubs import (
@@ -26,6 +27,7 @@ STUB_ACTIVITIES = (
     mark_jira_mirror_lag,
     persist_jira_tickets,
     claim_ticket_workspace,
+    apply_sandbox_write,
     implement_ticket,
     review_ticket,
     verify_ticket,
@@ -39,6 +41,7 @@ STUB_ACTIVITIES = (
 __all__ = [
     "STUB_ACTIVITIES",
     "ReopenStarter",
+    "apply_sandbox_write",
     "claim_ticket_workspace",
     "implement_ticket",
     "load_budget_config",

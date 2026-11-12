@@ -33,6 +33,20 @@ class SpikeConfigError(ValueError):
     """Optional spike.toml is present but invalid; the spike must not continue."""
 
 
+class WorkspaceConfigError(ValueError):
+    """Optional workspace.toml is present but invalid; the sandbox must not continue."""
+
+
+class SandboxViolation(ValueError):
+    """A coding-sandbox write or command violated the authorization boundary."""
+
+    def __init__(self, reason: str, path: str = "", authorized_worktree: str = "") -> None:
+        self.reason = reason
+        self.path = path
+        self.authorized_worktree = authorized_worktree
+        super().__init__(reason)
+
+
 class ProductionDeployForbidden(ValueError):
     """Any production (or non-test) publish target is rejected."""
 

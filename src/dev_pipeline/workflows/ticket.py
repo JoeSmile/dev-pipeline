@@ -100,4 +100,5 @@ class TicketWorkflow:
             execution_id=execution_id,
             stage=work.stage,
             detail=work.detail,
+            sandbox=work.sandbox,
         )

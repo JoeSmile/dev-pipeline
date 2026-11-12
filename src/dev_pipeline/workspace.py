@@ -1,8 +1,9 @@
 """In-memory workspace / side-effect claims keyed by ticket_id + execution_id.
 
-Real git, GitHub PRs, and worktree cleanup are out of scope (see DP-20 / DP-30).
-Claims never point at a shared mainline branch: every identity includes
-``execution_id``.
+The authorized worktree path is recorded here; guarded writes live in the
+coding sandbox (DP-20). Real git / GitHub PRs and worktree cleanup remain
+out of scope (see DP-30). Claims never point at a shared mainline branch:
+every identity includes ``execution_id``.
 """
 
 from __future__ import annotations
@@ -38,7 +39,12 @@ def derive_pr_token(ticket_id: str, execution_id: str) -> str:
     return f"pr-{ticket_id}-{execution_id}"
 
 
-def build_claim(ticket_id: str, execution_id: str) -> WorkspaceClaim:
+def build_claim(
+    ticket_id: str,
+    execution_id: str,
+    *,
+    authorized_worktree: str = "",
+) -> WorkspaceClaim:
     """Build a claim record without writing it to a store."""
 
     return WorkspaceClaim(
@@ -47,6 +53,7 @@ def build_claim(ticket_id: str, execution_id: str) -> WorkspaceClaim:
         workspace_id=derive_workspace_id(ticket_id, execution_id),
         branch_name=derive_branch_name(ticket_id, execution_id),
         pr_token=derive_pr_token(ticket_id, execution_id),
+        authorized_worktree=authorized_worktree,
     )
 
 
@@ -78,17 +85,25 @@ class WorkspaceClaimStore:
 
         return sum(self._created_counts.values())
 
-    def claim(self, ticket_id: str, execution_id: str) -> WorkspaceClaim:
+    def claim(
+        self,
+        ticket_id: str,
+        execution_id: str,
+        *,
+        authorized_worktree: str = "",
+    ) -> WorkspaceClaim:
         """Return the existing claim for the key, or record the first one.
 
         A second call with the same key returns the first claim and does not
         increment the created counter. The record is fully built before it is
         stored, and only that key is written, so a failure while claiming
         ticket A cannot mutate ticket B's slot or a mainline identity.
+        A later call cannot replace the first authorized worktree path.
 
         Args:
             ticket_id: Implementation ticket id.
             execution_id: Parent / child execution id.
+            authorized_worktree: Absolute path the sandbox may write, or empty.
 
         Returns:
             The first claim recorded for this key.
@@ -98,7 +113,11 @@ class WorkspaceClaimStore:
         existing = self._claims.get(key)
         if existing is not None:
             return existing
-        record = build_claim(ticket_id, execution_id)
+        record = build_claim(
+            ticket_id,
+            execution_id,
+            authorized_worktree=authorized_worktree,
+        )
         self._commit(key, record)
         return record
 
@@ -128,16 +147,22 @@ def claim_workspace(
     payload: TicketWorkInput,
     *,
     store: WorkspaceClaimStore | None = None,
+    authorized_worktree: str = "",
 ) -> WorkspaceClaim:
     """Claim or reuse the workspace identity for this ticket execution.
 
     Args:
         payload: Ticket work input carrying ticket_id and execution_id.
         store: Optional store; defaults to the process-wide registry.
+        authorized_worktree: Absolute path the sandbox may write, or empty.
 
     Returns:
         The first claim for this key. Repeated calls return the same record.
     """
 
     target = store if store is not None else default_claim_store()
-    return target.claim(payload.ticket_id, payload.execution_id)
+    return target.claim(
+        payload.ticket_id,
+        payload.execution_id,
+        authorized_worktree=authorized_worktree,
+    )

@@ -1,0 +1,7 @@
+# 配置根目录可选授权工作区样例。将本文件复制为 <config-root>/workspace.toml 后按需修改。
+# authorized_root 必须是已存在的绝对目录。
+# 每张票的授权 worktree 为 <authorized_root>/<ticket_id>/<execution_id>。
+# 写码沙箱只能改该 worktree；越界写入会被拒绝并记入既有快照。
+# 缺少本文件时默认未授权，拒绝任何写入。
+# 本票不授权自动 push / 合并，也不使用 Cursor CLI 的 --worktree。
+authorized_root = "D:\\pipeline-worktrees"

@@ -20,11 +20,13 @@ cd dev-pipeline
 New-Item -ItemType Directory -Force -Path D:\pipeline-config
 ```
 
-后面的 `CURSOR_API_KEY` 等密钥会放在这个目录里，本骨架还不读取它们，但路径本身必须先合法存在。
+后面的 `CURSOR_API_KEY` 等密钥会放在这个目录里（文件名就是 `CURSOR_API_KEY`）。完整 Cursor CLI 运行时见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)；本阶段若构建写码命令，只把密钥从该文件注入环境变量，禁止 `--api-key` 进命令行，也不得写入 Temporal History、证据文件或日志。本票不调用现场 Cursor CLI。
 
 该目录还必须包含 `budget.toml`（可从仓库 `docs/examples/budget.toml` 复制）。文件里的限额数字均为待证占位，须经负责人签批后才视为正式限额。缺少该文件或内容非法时，Worker 与 Workflow 都会以中文错误退出，不会使用隐藏默认限额继续执行。
 
 该目录还可选包含 `spike.toml`（可从仓库 `docs/examples/spike.toml` 复制），用于配置可选 Spike 的可证伪时限（`timeout_seconds`，大于 0 的整数）。缺少该文件时使用待证占位默认 4 小时，不是已签批的正式 SLA。文件存在但内容非法时，Spike 活动会以中文错误失败，不会假装已有正式时限。
+
+该目录还可选包含 `workspace.toml`（可从仓库 `docs/examples/workspace.toml` 复制），用于声明写码沙箱的授权工作区根目录 `authorized_root`（必须是已存在的绝对目录）。每张票的授权 worktree 为 `<authorized_root>/<ticket_id>/<execution_id>`。缺少该文件时默认未授权，沙箱拒绝任何写入。文件存在但内容非法时，工作区声明活动会以中文错误失败，不会偷偷写到未授权路径。
 
 ```powershell
 Copy-Item .\docs\examples\budget.toml D:\pipeline-config\budget.toml
