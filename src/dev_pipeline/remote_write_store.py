@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dev_pipeline.evidence_contract import write_text_utf8
 from dev_pipeline.remote_write import RemoteWriteRejection
 
 _REJECTIONS: list[RemoteWriteRejection] = []
@@ -63,5 +64,5 @@ def write_rejection_evidence(record: RemoteWriteRejection, directory: str) -> st
         f"- 已执行: {performed}\n"
         f"- 原因: {record.reason}\n"
     )
-    path.write_text(body, encoding="utf-8")
+    write_text_utf8(path, body)
     return str(path)

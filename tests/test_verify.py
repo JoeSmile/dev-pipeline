@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dev_pipeline.evidence_contract import UTF8_BOM, missing_verify_min_fields
 from dev_pipeline.verify import (
     CITATION_REPRODUCIBLE_EVIDENCE,
     FIELD_COMMAND,
@@ -88,7 +89,7 @@ def test_evidence_round_trip_keeps_utf8_min_fields_and_chinese() -> None:
         lines=[
             VerifyEvidenceLine(
                 red_line=CITATION_REPRODUCIBLE_EVIDENCE,
-                command_or_phenomenon="python -c \"print('红线 ↔ 证据')\" ；exit=0",
+                command_or_phenomenon="python -c \"print('红线 ↔ 证据「验收」— 通过')\" ；exit=0",
                 result=RESULT_HELD,
                 evidence_path=path,
             )
@@ -97,7 +98,9 @@ def test_evidence_round_trip_keeps_utf8_min_fields_and_chinese() -> None:
     text = render_evidence_text(record)
     encoded = text.encode("utf-8")
     assert encoded.decode("utf-8") == text
-    assert "红线 ↔ 证据" in text
+    assert not encoded.startswith(UTF8_BOM)
+    assert missing_verify_min_fields(text) == ()
+    assert "红线 ↔ 证据「验收」— 通过" in text
     assert FIELD_RED_LINE in text
     assert FIELD_COMMAND in text
     assert FIELD_RESULT in text
@@ -109,6 +112,6 @@ def test_evidence_round_trip_keeps_utf8_min_fields_and_chinese() -> None:
     assert parsed.execution_id == "exec-1"
     assert parsed.passed is True
     assert parsed.lines[0].red_line == CITATION_REPRODUCIBLE_EVIDENCE
-    assert "红线 ↔ 证据" in parsed.lines[0].command_or_phenomenon
+    assert "红线 ↔ 证据「验收」— 通过" in parsed.lines[0].command_or_phenomenon
     assert parsed.lines[0].result == RESULT_HELD
     assert parsed.lines[0].evidence_path == path

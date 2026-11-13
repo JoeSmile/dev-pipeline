@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dev_pipeline.evidence_contract import read_text_utf8, write_text_utf8
 from dev_pipeline.retro import (
     CANDIDATE_STATUS,
     PROMOTION_TARGETS,
@@ -46,7 +47,7 @@ def load_candidates(candidate_dir: Path) -> dict[str, CandidateRecord]:
     if not candidate_dir.is_dir():
         return records
     for path in sorted(candidate_dir.glob("*.md")):
-        text = path.read_text(encoding="utf-8")
+        text = read_text_utf8(path)
         record = parse_candidate_text(text, candidate_id=path.stem)
         if record.candidate_id:
             records[record.candidate_id] = record
@@ -58,7 +59,7 @@ def write_candidate(candidate_dir: Path, record: CandidateRecord) -> Path:
 
     candidate_dir.mkdir(parents=True, exist_ok=True)
     path = candidate_dir / f"{record.candidate_id}.md"
-    path.write_text(render_candidate_text(record), encoding="utf-8")
+    write_text_utf8(path, render_candidate_text(record))
     return path
 
 
@@ -89,9 +90,9 @@ def produce_retro_result(payload: RetroInput) -> RetroResult:
         write_candidate(candidate_dir, item)
     daily_dir.mkdir(parents=True, exist_ok=True)
     daily_path = root / daily_note_relpath(payload.daily_date)
-    existing = daily_path.read_text(encoding="utf-8") if daily_path.is_file() else ""
+    existing = read_text_utf8(daily_path) if daily_path.is_file() else ""
     text = _scrub(render_daily_note(existing, payload, candidates))
-    daily_path.write_text(text, encoding="utf-8")
+    write_text_utf8(daily_path, text)
     record = RetroRecord(
         daily_path=str(daily_path),
         daily_date=payload.daily_date,

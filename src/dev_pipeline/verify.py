@@ -1,9 +1,9 @@
-"""Verifying types, evidence-file contract, and pass/fail classification.
+"""Verifying types, evidence rendering, and pass/fail classification.
 
 This module is deterministic and safe for workflow imports. It does not
 touch the filesystem, clock, or network. The DP-32 evidence contract
-(path, UTF-8, minimum fields) lives here so DP-24 does not invent a
-second format.
+(path, UTF-8, minimum fields) lives in ``evidence_contract``; this
+module re-exports it so DP-24 does not invent a second format.
 """
 
 from __future__ import annotations
@@ -11,16 +11,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from dev_pipeline.evidence_contract import (
+    DEFAULT_EVIDENCE_RELPATH,
+    FIELD_COMMAND,
+    FIELD_EVIDENCE_PATH,
+    FIELD_EXECUTION_ID,
+    FIELD_RED_LINE,
+    FIELD_RESULT,
+    FIELD_TICKET_ID,
+    evidence_relpath,
+)
 from dev_pipeline.review import CITATION_LINE_LIMIT, MAX_FILE_LINES
 
 VerifyMode = Literal["", "dry-run", "history"]
-
-FIELD_RED_LINE = "对应红线"
-FIELD_COMMAND = "命令或现象"
-FIELD_RESULT = "结果"
-FIELD_EVIDENCE_PATH = "证据路径"
-FIELD_TICKET_ID = "ticket_id"
-FIELD_EXECUTION_ID = "execution_id"
 
 RESULT_HELD = "守住"
 RESULT_BROKEN = "未守住"
@@ -32,7 +35,6 @@ VERIFY_MODE_NORMAL: VerifyMode = ""
 VERIFY_MODE_DRY_RUN: VerifyMode = "dry-run"
 VERIFY_MODE_HISTORY: VerifyMode = "history"
 
-DEFAULT_EVIDENCE_RELPATH = "evidence/verify.md"
 VERIFY_BACKEND_STUB = "桩"
 
 CITATION_REPRODUCIBLE_EVIDENCE = (
@@ -160,13 +162,6 @@ def classify_verify_outcome(
     if any(item.result == RESULT_HELD for item in lines):
         return True, REASON_PASSED
     return False, REASON_MISSING_MAPPING
-
-
-def evidence_relpath(requested: str = "") -> str:
-    """Return the in-tree evidence path, defaulting to the DP-32 contract path."""
-
-    text = requested.strip()
-    return text or DEFAULT_EVIDENCE_RELPATH
 
 
 def render_evidence_text(record: VerifyRecord) -> str:

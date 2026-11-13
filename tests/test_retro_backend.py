@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from dev_pipeline.evidence_contract import UTF8_BOM, read_text_utf8
 from dev_pipeline.retro import (
     CANDIDATE_STATUS,
     PROMOTION_TARGET_L0,
@@ -62,7 +63,8 @@ def test_retro_writes_utf8_daily_and_does_not_auto_promote(tmp_path: Path) -> No
     assert result.record is not None
     daily = Path(result.record.daily_path)
     assert daily.is_file()
-    text = daily.read_text(encoding="utf-8")
+    assert not daily.read_bytes().startswith(UTF8_BOM)
+    text = read_text_utf8(daily)
     assert "STORY-A" in text
     assert "wt/A/evidence/verify.md" in text
     assert is_difficulty_score_report(text) is False

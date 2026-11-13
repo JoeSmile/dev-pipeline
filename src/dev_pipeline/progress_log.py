@@ -2,7 +2,9 @@
 
 Workflow modules must not import this file. The log is the Activity-side
 source for step hints; Temporal Activity heartbeats carry the current step.
-The full log is never written into Workflow History.
+The full log is never written into Workflow History. Encoding follows the
+DP-32 UTF-8 write helpers; this artifact does not use the verify-evidence
+minimum fields.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from dev_pipeline.evidence_contract import append_text_utf8, read_text_utf8, write_text_utf8
 from dev_pipeline.progress import (
     DEFAULT_HEARTBEAT_INTERVAL,
     MAX_RECENT_HINTS,
@@ -81,10 +84,8 @@ def append_progress_step(
     cleaned = sanitize_step(step)
     if not cleaned:
         return ""
-    log_path.parent.mkdir(parents=True, exist_ok=True)
     record = {"ts": _iso(now or datetime.now(UTC)), "kind": "step", "step": cleaned}
-    with log_path.open("a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_text_utf8(log_path, json.dumps(record, ensure_ascii=False) + "\n")
     return cleaned
 
 
@@ -100,14 +101,13 @@ def write_heartbeat_file(
 
     cleaned = sanitize_step(step)
     stamp = _iso(now or datetime.now(UTC))
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "current_step": cleaned,
         "last_heartbeat_at": stamp,
         "ticket_id": ticket_id,
         "activity": activity_name,
     }
-    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_text_utf8(path, json.dumps(payload, ensure_ascii=False) + "\n")
     return stamp
 
 
@@ -117,7 +117,7 @@ def read_recent_hints(log_path: Path | None, *, limit: int = MAX_RECENT_HINTS) -
     if log_path is None or not log_path.is_file():
         return []
     hints: list[str] = []
-    for raw in log_path.read_text(encoding="utf-8").splitlines():
+    for raw in read_text_utf8(log_path).splitlines():
         line = raw.strip()
         if not line:
             continue
@@ -139,7 +139,7 @@ def read_heartbeat_file(path: Path | None) -> dict[str, str]:
     if path is None or not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_text_utf8(path))
     except (json.JSONDecodeError, OSError):
         return {}
     if not isinstance(data, dict):

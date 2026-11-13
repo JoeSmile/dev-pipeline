@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path, PureWindowsPath
 
 from dev_pipeline.errors import ProductionDeployForbidden, SandboxViolation
+from dev_pipeline.evidence_contract import write_text_utf8
 from dev_pipeline.models import SandboxRecord, SandboxStatus, SandboxWriteResult
 from dev_pipeline.remote_write import classify_remote_action, decide_remote_write, infer_git_target
 
@@ -462,7 +463,7 @@ def apply_guarded_write(
         return SandboxWriteResult(allowed=False, record=record, written_path="")
     destination = Path(decision.written_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(content, encoding="utf-8")
+    write_text_utf8(destination, content)
     # Recheck after the write in case a race replaced a parent with a symlink.
     post = inspect_filesystem_escape(str(destination), authorized_worktree)
     if post is not None:

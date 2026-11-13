@@ -8,6 +8,7 @@ import pytest
 
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.errors import ProductionDeployForbidden, SandboxViolation
+from dev_pipeline.evidence_contract import UTF8_BOM, read_text_utf8
 from dev_pipeline.models import PENDING_FIELD
 from dev_pipeline.remote_write import (
     RemoteWriteAction,
@@ -70,9 +71,12 @@ def test_production_publish_is_rejected_with_record(tmp_path: Path) -> None:
     assert journal[0].target == "production"
     evidence = Path(remembered.evidence_path)
     assert evidence.is_file()
-    text = evidence.read_text(encoding="utf-8")
+    raw = evidence.read_bytes()
+    assert not raw.startswith(UTF8_BOM)
+    text = read_text_utf8(evidence)
     assert "production" in text
     assert "已执行: 否" in text
+    assert "禁止生产发布" in text
 
 
 def test_non_test_publish_target_is_rejected() -> None:

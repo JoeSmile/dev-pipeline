@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tests.sandbox_fixtures import write_workspace_toml
 
+from dev_pipeline.evidence_contract import UTF8_BOM, missing_verify_min_fields
 from dev_pipeline.review import MAX_FILE_LINES
 from dev_pipeline.verify import (
     CITATION_LINE_LIMIT_VERIFY,
@@ -63,6 +64,8 @@ def test_passing_check_writes_utf8_evidence_mapped_to_red_line(
         assert evidence == Path(payload.authorized_worktree) / DEFAULT_EVIDENCE_RELPATH
         raw = evidence.read_bytes()
         text = raw.decode("utf-8")
+        assert not raw.startswith(UTF8_BOM)
+        assert missing_verify_min_fields(text) == ()
         assert FIELD_RED_LINE.encode("utf-8") in raw
         assert FIELD_COMMAND.encode("utf-8") in raw
         assert FIELD_RESULT.encode("utf-8") in raw
@@ -92,9 +95,12 @@ def test_oversized_file_fails_and_still_writes_evidence(tmp_config_root: Path) -
         assert broken and broken[0].result == RESULT_BROKEN
         evidence = Path(result.record.evidence_path)
         assert evidence.is_file()
-        text = evidence.read_text(encoding="utf-8")
+        raw = evidence.read_bytes()
+        text = raw.decode("utf-8")
+        assert not raw.startswith(UTF8_BOM)
+        assert missing_verify_min_fields(text) == ()
         assert RESULT_BROKEN in text
-        assert evidence.read_bytes().decode("utf-8") == text
+        assert raw.decode("utf-8") == text
     finally:
         reset_default_claim_store()
 
