@@ -182,6 +182,9 @@ class ParentOrchestrationMixin:
         await workflow.wait_condition(lambda: state.scheme is not None or state.abort_requested)
         if state.abort_requested:
             return
+        await self._apply_scheme_retrieval()  # type: ignore[attr-defined]
+        if state.abort_requested:
+            return
         await self._move(ParentStage.SCHEME_DECIDED, "decide_scheme")
         state.waiting = None
 

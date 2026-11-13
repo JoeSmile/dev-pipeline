@@ -6,6 +6,7 @@ from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
 from dev_pipeline.activities.jira_tickets import persist_jira_tickets
 from dev_pipeline.activities.reopen import ReopenStarter
+from dev_pipeline.activities.retrieval import retrieve_scheme_knowledge
 from dev_pipeline.activities.retro import apply_promote_rule, write_retro_record
 from dev_pipeline.activities.review import review_ticket
 from dev_pipeline.activities.sandbox import apply_sandbox_write
@@ -32,6 +33,7 @@ STUB_ACTIVITIES = (
     run_debate,
     run_rag,
     run_model_call,
+    retrieve_scheme_knowledge,
     publish_to_test_env,
     apply_promote_rule,
     write_retro_record,
@@ -55,6 +57,7 @@ __all__ = [
     "review_ticket",
     "run_debate",
     "run_model_call",
+    "retrieve_scheme_knowledge",
     "run_rag",
     "run_spike",
     "validate_config_root",

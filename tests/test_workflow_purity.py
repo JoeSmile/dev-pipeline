@@ -24,6 +24,8 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.cli",
         "dev_pipeline.budget_config",
         "dev_pipeline.spike_config",
+        "dev_pipeline.retrieval_config",
+        "dev_pipeline.retrieval_backend",
         "dev_pipeline.jira_config",
         "dev_pipeline.jira_client",
         "dev_pipeline.sandbox",

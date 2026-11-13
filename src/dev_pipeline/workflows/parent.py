@@ -12,6 +12,7 @@ from dev_pipeline.workflows.parent_child_signals import ParentChildSignalMixin
 from dev_pipeline.workflows.parent_jira_mirror import ParentJiraMirrorMixin
 from dev_pipeline.workflows.parent_orchestrate import ParentOrchestrationMixin
 from dev_pipeline.workflows.parent_reopen import ParentReopenMixin
+from dev_pipeline.workflows.parent_retrieval import ParentRetrievalMixin
 from dev_pipeline.workflows.parent_signals import ParentSignalMixin
 from dev_pipeline.workflows.parent_state import ParentState
 from dev_pipeline.workflows.parent_tickets import ParentTicketsMixin
@@ -23,6 +24,7 @@ class DevPipelineWorkflow(
     ParentChildSignalMixin,
     ParentReopenMixin,
     ParentBudgetMixin,
+    ParentRetrievalMixin,
     ParentJiraMirrorMixin,
     ParentTicketsMixin,
     ParentOrchestrationMixin,

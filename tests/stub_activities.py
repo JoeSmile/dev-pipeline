@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from temporalio import activity
 
 from dev_pipeline.activities.cleanup import recycle_aborted_execution_activity
+from dev_pipeline.activities.retrieval import retrieve_scheme_knowledge
 from dev_pipeline.activities.retro import apply_promote_rule
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
@@ -387,6 +388,7 @@ class StubController:
             run_debate,
             run_rag,
             run_model_call,
+            retrieve_scheme_knowledge,
             mirror_parent_stage,
             mark_jira_mirror_lag,
             persist_jira_tickets,

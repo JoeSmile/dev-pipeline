@@ -44,9 +44,9 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 
 互辩、检索（RAG）与多模型调用的预算闸门挂在父 Workflow。计量单位为可配置的 `tokens` / `calls` / `cost`（至少启用一个），限额写在配置根目录的 `budget.toml`。缺失或非法配置会以中文错误可见地失败，不会使用隐藏默认限额继续执行。样例见 `docs/examples/budget.toml`；其中的数字均为**待证**占位，须经负责人签批后才视为正式限额。
 
-耗费用路径通过父执行上的 Update `start_costly_path` 启动对应桩 Activity（`run_debate` / `run_rag` / `run_model_call`）。任一已启用单位用尽时立即停止这些路径，快照记录 `Bad` 与超限原因，不再启动后续外部模型或检索，也不会静默继续计费。超限不自动取消同 Story 其他未受影响的 Ticket。某条路径返回「无新证据」时只停止该路径，不再继续消耗预算。双 Review 同样只跑一轮并行审查，停止原因复用该「无新证据」表述，不另建第二套预算账本；耗费用的互辩 / RAG / 多模型仍走既有 `start_costly_path` 闸门。
+耗费用路径通过父执行上的 Update `start_costly_path` 启动对应桩 Activity（`run_debate` / `run_rag` / `run_model_call`）。方案阶段检索走同一账本的 Activity `retrieve_scheme_knowledge`（见 [DP-33](https://weiperfect007.atlassian.net/browse/DP-33)），不得用未标明的桩假装已检索到。任一已启用单位用尽时立即停止这些路径，快照记录 `Bad` 与超限原因，不再启动后续外部模型或检索，也不会静默继续计费。超限不自动取消同 Story 其他未受影响的 Ticket。某条路径返回「无新证据」时只停止该路径，不再继续消耗预算。双 Review 同样只跑一轮并行审查，停止原因复用该「无新证据」表述，不另建第二套预算账本；耗费用的互辩 / RAG / 多模型仍走既有 `start_costly_path` 闸门。
 
-已用、限额、剩余、已停止路径和 `last_breach` 挂在现有父执行查询快照的 `budget` 字段上，不另开第二套 Query。真实 RAG / 多模型调度细节不在本票范围。
+已用、限额、剩余、已停止路径和 `last_breach` 挂在现有父执行查询快照的 `budget` 字段上，不另开第二套 Query。方案阶段检索边界见 [DP-33](https://weiperfect007.atlassian.net/browse/DP-33)。多模型调度细节不在本票范围。
 
 ## 操作 CLI：启动、Signal、状态（DP-28）
 
@@ -171,7 +171,7 @@ stateDiagram-v2
 |---|---|---|
 | Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿（`snapshot.story_draft`：要解决什么、已知约束、缺项列表）；缺项标 `待证`，无臆造验收。草稿是 `lock_scope` 的输入，本阶段不锁范围 |
 | ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么已写入执行记录（含锁定人、时间），可供 Query 与 `reopen` 只读继承（方案、假设与已关闭 Ticket 证据见 DP-30）；禁止未锁范围就开编码 |
-| SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录（`snapshot.scheme`：取舍说明、假设清单分级为红线级 / 局部 / 候选、拍板人、时间、检索为桩或真实命中）；无红线级可直达 TicketsReady |
+| SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录（`snapshot.scheme`：取舍说明、假设清单分级为红线级 / 局部 / 候选、拍板人、时间、检索标记为桩 / 检索成功 / 无命中 / 检索失败 / 超预算；详情见 `snapshot.scheme_retrieval`）；无红线级可直达 TicketsReady |
 | Spike（可选） | 红线级假设 | 可证伪结论写入 `snapshot.spike`；时限由可选 `spike.toml` 配置（缺省为待证占位，示例为半小时～半天中的 4 小时）。验证过则进 TicketsReady；击穿红线且无防护，或超时未验证，进入 Blocked；有防护时须经 `approve_spike` 才能进 TicketsReady。过线后不直接 Implementing，不派 Coding Child |
 | TicketsReady | 已拍方案 | Ticket 清单：目标、验收、依赖、I/O 契约；清单齐才能进 Implementing 并为每张必做票建立 Child。清单未齐时等候 `submit_tickets`。票写入 Jira 项目 `DP`，不写 `TASKS.md` |
 | Implementing | 单张 Ticket + worktree 权限 | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此聚合等待 Child 循环；全部未移除 Ticket 过线后等候 authorize_test_deploy |
@@ -203,7 +203,7 @@ stateDiagram-v2
 | Signal | Payload | 必填 | 合法阶段 | 拒绝条件 |
 |---|---|---|---|---|
 | `lock_scope` | `ScopeLock` | `in_scope`、`out_of_scope`、`locked_by` | Intake | 缺字段、类型错误、范围已锁或只读继承后、阶段不对。`locked_at` 由工作流写入，不取自 payload |
-| `decide_scheme` | `SchemeDecision` | `tradeoff`、`hypotheses`（分级：红线级 / 局部 / 候选）、`decided_by` | ScopeLocked | 缺字段、类型错误、未知分级、布尔值与分级冲突、已拍过、阶段不对（含未锁范围）。`decided_at` 由工作流写入，不取自 payload。检索标记本票记为 `桩`。无红线级假设进入 TicketsReady；有红线级假设进入 Spike |
+| `decide_scheme` | `SchemeDecision` | `tradeoff`、`hypotheses`（分级：红线级 / 局部 / 候选）、`decided_by` | ScopeLocked | 缺字段、类型错误、未知分级、布尔值与分级冲突、已拍过、阶段不对（含未锁范围）。`decided_at` 由工作流写入，不取自 payload。忽略客户端声称的 `真实命中`；检索标记由方案阶段 RAG 边界写入（未配置语料根目录时为 `桩`，否则为 `检索成功` / `无命中` / `检索失败` / `超预算`，见 [DP-33](https://weiperfect007.atlassian.net/browse/DP-33)）。无红线级假设进入 TicketsReady；有红线级假设进入 Spike |
 | `approve_spike` | `ApproveSpikeRequest` | `accepted` | Spike，且正在等候防护批准 | 缺字段、类型错误、已决定、阶段不对、验证过或无需防护时尚未/不再等候批准 |
 | `submit_tickets` | `TicketListSubmission` | `tickets`、`submitted_by` | TicketsReady，且清单尚未齐 | 缺字段、类型错误、清单未齐（缺目标/验收/依赖/I/O 契约、仍有待证、重复 id、未知依赖或成环）、阶段不对、清单已齐后再次提交 |
 | `review_override` | `ReviewOverride` | `ticket_id`、`decision`（`放行` / `打回` / `否决`，或 `approve` / `rework` / `reject`）、`decided_by`；可选 `reason`。忽略调用方传入的 `decided_at`，由 Workflow 用 `workflow.now()` 落时间 | 对应 Child 处于 HumanGate | 缺字段、类型错误、未知 Ticket、不在 HumanGate |

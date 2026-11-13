@@ -33,6 +33,10 @@ class SpikeConfigError(ValueError):
     """Optional spike.toml is present but invalid; the spike must not continue."""
 
 
+class RetrievalConfigError(ValueError):
+    """Optional rag.toml is present but invalid; retrieval must not pretend to succeed."""
+
+
 class WorkspaceConfigError(ValueError):
     """Optional workspace.toml is present but invalid; the sandbox must not continue."""
 

@@ -15,6 +15,10 @@ if TYPE_CHECKING:
 from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
 from dev_pipeline.progress import ProgressSnapshot
+from dev_pipeline.retrieval import RETRIEVAL_MARKS as RETRIEVAL_MARKS
+from dev_pipeline.retrieval import RETRIEVAL_STUB as RETRIEVAL_STUB
+from dev_pipeline.retrieval import RetrievalMark as RetrievalMark
+from dev_pipeline.retrieval import SchemeRetrievalRecord as SchemeRetrievalRecord
 from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.review import DualReviewRecord
 from dev_pipeline.stages import ParentStage, TestDeployStatus, TicketStage
@@ -131,7 +135,7 @@ def is_complete_scheme_decision(scheme: SchemeDecision) -> bool:
         for value in (scheme.tradeoff, scheme.decided_by, scheme.decided_at)
     ):
         return False
-    if scheme.retrieval not in {RETRIEVAL_STUB, RETRIEVAL_HIT}:
+    if scheme.retrieval not in RETRIEVAL_MARKS:
         return False
     if not isinstance(scheme.hypotheses, list):
         return False
@@ -160,10 +164,7 @@ class StoryInput:
 
 
 HypothesisGrade = Literal["红线级", "局部", "候选"]
-RetrievalMark = Literal["桩", "真实命中"]
 HYPOTHESIS_GRADES: frozenset[HypothesisGrade] = frozenset({"红线级", "局部", "候选"})
-RETRIEVAL_STUB: RetrievalMark = "桩"
-RETRIEVAL_HIT: RetrievalMark = "真实命中"
 
 
 @dataclass
@@ -180,10 +181,11 @@ class SchemeDecision:
 
     Human signals must supply ``tradeoff``, ``hypotheses``, and
     ``decided_by``. The workflow stamps ``decided_at`` from
-    ``workflow.now()`` and records ``retrieval`` as ``桩`` on the
-    deterministic stub path, ignoring client-supplied time or a claimed
-    ``真实命中``. ``has_high_risk_assumption`` is derived from whether
-    any hypothesis is graded 红线级.
+    ``workflow.now()`` and ignores client-supplied time or a claimed
+    ``真实命中``. After decide_scheme, the workflow stamps ``retrieval``
+    from the scheme-phase RAG boundary (桩 / 检索成功 / 无命中 / 检索失败 /
+    超预算). ``has_high_risk_assumption`` is derived from whether any
+    hypothesis is graded 红线级.
     """
 
     tradeoff: str
@@ -617,6 +619,7 @@ class PipelineSnapshot:
     story_draft: StoryDraft | None = None
     scope: ScopeLock | None = None
     scheme: SchemeDecision | None = None
+    scheme_retrieval: SchemeRetrievalRecord | None = None
     spike: SpikeRecord | None = None
     ticket_list_complete: bool = False
     ticket_list_submitted_by: str = ""

@@ -78,7 +78,7 @@ stateDiagram-v2
 |---|---|
 | Intake | 规范化 Story 草稿（`snapshot.story_draft`），缺项标待证；不锁范围 |
 | ScopeLocked | 要解决 / 不做什么已锁，并写入执行记录（锁定人、时间）；`reopen` 只读继承 |
-| SchemeDecided | 取舍记录 + 假设分级（红线 / 局部 / 候选） |
+| SchemeDecided | 取舍记录 + 假设分级（红线 / 局部 / 候选）+ 方案阶段检索记录（桩 / 检索成功 / 无命中 / 检索失败 / 超预算） |
 | Spike | 可证伪结论写入 `snapshot.spike`；验证过进 TicketsReady；击穿红线且无防护或超时未验证则 Blocked；有防护须经 `approve_spike`。过线后不直接 Implementing，不派 Coding Child |
 | TicketsReady | 每张票有目标、验收、依赖、I/O 契约；清单齐后进入 Implementing 并为每张必做票建立 Child。票写入 Jira 项目 DP，不写 TASKS.md |
 | Implementing | 分支、diff、单测、回滚说明；幂等键 `ticket_id + execution_id`。父执行在此等待 Child |
@@ -98,4 +98,4 @@ stateDiagram-v2
 
 启动 Worker 必须显式传入已存在的绝对路径 `--config-root`。缺失或无效必须可见地失败，见 `docs/dev-setup.md`。Workflow 模块本身不做文件系统访问；校验发生在 Worker 入口与 `validate_config_root` Activity。Windows 是第一开发环境：本仓库 Worker 默认连接已运行的官方 Temporal `127.0.0.1:7233`（容器 `agent-platform-temporal-1`），不要在本仓库再起一份临时 Temporal。
 
-配置根目录必须包含 `budget.toml`（样例见 `docs/examples/budget.toml`）。计量单位与限额可配置；数字在签批前标为待证，缺失或非法时以中文错误失败，不使用隐藏默认限额。父执行在 bootstrap 时通过 `load_budget_config` Activity 装入账本。互辩 / 检索 / 多模型桩必须经父执行闸门 `start_costly_path` 才能启动；超限即停并记 `Bad`，无新证据则只停该路径。超限不取消同 Story 其他 Ticket。
+配置根目录必须包含 `budget.toml`（样例见 `docs/examples/budget.toml`）。计量单位与限额可配置；数字在签批前标为待证，缺失或非法时以中文错误失败，不使用隐藏默认限额。父执行在 bootstrap 时通过 `load_budget_config` Activity 装入账本。互辩 / 检索 / 多模型桩必须经父执行闸门 `start_costly_path` 才能启动；方案阶段 RAG 走同一账本上的 `retrieve_scheme_knowledge`（[DP-33](https://weiperfect007.atlassian.net/browse/DP-33)），标记为桩 / 检索成功 / 无命中 / 检索失败 / 超预算，失败或空检索不得默填「已检索到」。超限即停并记 `Bad`，无新证据则只停该路径。超限不取消同 Story 其他 Ticket。

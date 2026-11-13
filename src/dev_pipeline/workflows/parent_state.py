@@ -30,6 +30,7 @@ from dev_pipeline.models import (
 )
 from dev_pipeline.progress import ProgressSnapshot, last_failure_reason, waiting_confirmation
 from dev_pipeline.remote_write import RemoteWriteRejection
+from dev_pipeline.retrieval import SchemeRetrievalRecord
 from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
@@ -50,6 +51,7 @@ class ParentState:
         self.input: StoryInput | None = None
         self.scope: ScopeLock | None = None
         self.scheme: SchemeDecision | None = None
+        self.scheme_retrieval: SchemeRetrievalRecord | None = None
         self.spike: SpikeRecord | None = None
         self.spike_accepted: bool | None = None
         self.abort_requested = False
@@ -294,6 +296,7 @@ class ParentState:
             story_draft=self.story_draft,
             scope=self.scope,
             scheme=self.scheme,
+            scheme_retrieval=self.scheme_retrieval,
             spike=self.spike,
             ticket_list_complete=is_complete_ticket_list(self.specs),
             ticket_list_submitted_by=self.ticket_list_submitted_by,

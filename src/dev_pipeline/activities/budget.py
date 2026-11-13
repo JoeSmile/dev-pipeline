@@ -28,14 +28,14 @@ async def run_debate(payload: CostlyPathInput) -> CostlyPathResult:
 
 @activity.defn
 async def run_rag(payload: CostlyPathInput) -> CostlyPathResult:
-    """Default retrieval stub. Real RAG scheduling is DP-33."""
+    """Default retrieval stub. Scheme-phase RAG uses retrieve_scheme_knowledge."""
 
     activity.logger.info("stub run_rag story=%s", payload.story_id)
     return CostlyPathResult(
         path="rag",
         has_new_evidence=True,
         usage=BudgetAmounts(calls=1),
-        detail="stub-rag",
+        detail="桩：未执行真实检索",
     )
 
 
