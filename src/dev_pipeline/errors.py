@@ -48,7 +48,11 @@ class SandboxViolation(ValueError):
 
 
 class ProductionDeployForbidden(ValueError):
-    """Any production (or non-test) publish target is rejected."""
+    """Any production (or non-test) publish or production remote write is rejected."""
+
+    def __init__(self, message: str, record: object | None = None) -> None:
+        self.record = record
+        super().__init__(message)
 
 
 class PipelineStartError(ValueError):

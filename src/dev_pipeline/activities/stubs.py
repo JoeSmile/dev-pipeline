@@ -11,6 +11,7 @@ Tests may register replacements with the same activity names.
 from temporalio import activity
 
 from dev_pipeline.deliverables import produce_implement_result
+from dev_pipeline.errors import ProductionDeployForbidden
 from dev_pipeline.models import (
     ImplementResult,
     PublishRequest,
@@ -18,6 +19,8 @@ from dev_pipeline.models import (
     TicketWorkInput,
 )
 from dev_pipeline.progress_log import activity_progress
+from dev_pipeline.remote_write import decide_remote_write
+from dev_pipeline.remote_write_store import remember_rejection
 from dev_pipeline.transitions import validate_publish_target
 from dev_pipeline.workspace_auth import resolve_workspace_claim
 
@@ -54,6 +57,11 @@ async def implement_ticket(payload: TicketWorkInput) -> ImplementResult:
 async def publish_to_test_env(request: PublishRequest) -> PublishResult:
     """Publish only to the test environment. Production targets are rejected."""
 
+    decision = decide_remote_write("publish", request.target)
+    if decision.rejection is not None:
+        remember_rejection(decision.rejection)
+    if not decision.allowed:
+        raise ProductionDeployForbidden(decision.reason, decision.rejection)
     validate_publish_target(request.target)
     activity.logger.info(
         "stub publish_to_test_env story=%s target=%s", request.story_id, request.target

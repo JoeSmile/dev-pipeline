@@ -141,6 +141,7 @@ async def test_live_unauthorized_path_does_not_push_or_open_pr(
         assert snap.deliverables.pushed is False
         assert snap.deliverables.merged is False
         assert snap.deliverables.remote_pr_opened is False
+        assert snap.deliverables.pr_authorization == "待证"
         assert "review_ticket" not in scheduled_activity_names(await handle.fetch_history())
     finally:
         await handle.terminate()

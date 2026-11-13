@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from dev_pipeline.abort_record import AbortRecord
     from dev_pipeline.inheritance import InheritedArtifacts
+    from dev_pipeline.remote_write import RemoteWriteRejection
 
 
 from dev_pipeline.budget import BudgetSnapshot
@@ -322,8 +323,9 @@ class TicketDeliverables:
 
     Completeness requires a derivable local branch, a reviewable diff, unit-test
     evidence, and rollback notes. Default is no remote push, merge, or PR.
-    ``pr_authorization`` stays 待证 until DP-31. ``worktree_recycle`` is a
-    deliverable-time marker; abort recycles this execution's unmerged trees.
+    ``pr_authorization`` stays 待证: DP-31 treats that as unauthorized.
+    ``worktree_recycle`` is a deliverable-time marker; abort recycles this
+    execution's unmerged trees.
     """
 
     branch_name: str = ""
@@ -420,7 +422,8 @@ class PublishRequest:
 
     story_id: str
     execution_id: str
-    target: PublishTarget = TEST_PUBLISH_TARGET
+    # Wider than PublishTarget so a production value can be rejected and recorded.
+    target: str = TEST_PUBLISH_TARGET
 
 
 @dataclass
@@ -625,6 +628,7 @@ class PipelineSnapshot:
     progress: ProgressSnapshot | None = None
     abort_record: AbortRecord | None = None
     inherited: InheritedArtifacts | None = None
+    remote_write_rejections: list[RemoteWriteRejection] = field(default_factory=list)
 
 
 @dataclass
@@ -668,4 +672,7 @@ def story_workflow_id(story_id: str, execution_id: str) -> str:
 # Imported last so those modules can reuse ScopeLock / SchemeDecision here.
 from dev_pipeline.abort_record import AbortRecord as AbortRecord  # noqa: E402
 from dev_pipeline.inheritance import InheritedArtifacts as InheritedArtifacts  # noqa: E402
+from dev_pipeline.remote_write import (  # noqa: E402
+    RemoteWriteRejection as RemoteWriteRejection,
+)
 

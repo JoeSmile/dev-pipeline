@@ -11,8 +11,9 @@ import re
 from collections.abc import Sequence
 from pathlib import Path, PureWindowsPath
 
-from dev_pipeline.errors import SandboxViolation
+from dev_pipeline.errors import ProductionDeployForbidden, SandboxViolation
 from dev_pipeline.models import SandboxRecord, SandboxStatus, SandboxWriteResult
+from dev_pipeline.remote_write import classify_remote_action, decide_remote_write, infer_git_target
 
 PathStyle = str  # "windows" | "posix"
 
@@ -375,11 +376,25 @@ def remote_git_action_reason(argv: Sequence[str]) -> str | None:
 
 
 def assert_no_auto_push_or_merge(argv: Sequence[str]) -> None:
-    """Reject git push, merge, rebase, or ``git config --global`` commands."""
+    """Reject git push, merge, rebase, or ``git config --global`` commands.
+
+    Production-named remotes or refs are rejected as production writes and
+    recorded. Default unauthorized push / merge never performs a remote write.
+    """
 
     reason = remote_git_action_reason(argv)
-    if reason:
-        raise SandboxViolation(reason)
+    if not reason:
+        return
+    action = classify_remote_action(list(argv))
+    target = infer_git_target(tuple(str(item) for item in argv))
+    if action is not None:
+        decision = decide_remote_write(action, target)
+        if decision.rejection is not None and decision.rejection.kind == "production":
+            from dev_pipeline.remote_write_store import remember_rejection
+
+            remember_rejection(decision.rejection)
+            raise ProductionDeployForbidden(decision.reason, decision.rejection)
+    raise SandboxViolation(reason)
 
 
 def evaluate_write(
@@ -462,6 +477,7 @@ def apply_guarded_write(
         )
         return SandboxWriteResult(allowed=False, record=record, written_path="")
     return decision
+
 
 REVIEW_WRITE_DENIED = "Review Worker 只读，拒绝写入工作区"
 

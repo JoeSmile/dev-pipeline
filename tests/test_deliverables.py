@@ -113,6 +113,7 @@ def test_unauthorized_worktree_is_incomplete_and_does_not_push(tmp_path: Path) -
     assert result.deliverables.pushed is False
     assert result.deliverables.merged is False
     assert result.deliverables.remote_pr_opened is False
+    assert result.deliverables.pr_authorization == PENDING_FIELD
     assert "未授权" in result.detail
 
 

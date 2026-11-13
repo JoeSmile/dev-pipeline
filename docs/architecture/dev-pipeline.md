@@ -55,6 +55,7 @@ stateDiagram-v2
 
 - Child（`TicketWorkflow`）从 `Pending` 开始。依赖未过线时不得进入 `Implementing`（即使 Child 被直接启动）。
 - 循环：`Implementing` → `Reviewing` →（阻断或范式漂移时 `HumanGate`）→ `Verifying`。进入 Reviewing 前必须交付分支、diff、单测与回滚说明，记录在既有快照 `tickets[].deliverables` / Child `snapshot.deliverables`。缺项不得进入 Reviewing。仅建议/信息可从 `Reviewing` 直达 `Verifying`；阻断项或范式漂移必须 HumanGate，交付完成不等于 Review 通过。验证失败回到 `Implementing`。双 Review 本身见 DP-22，本骨架仍使用审查桩。
+- 写码默认不自动 `push`、不自动合并、不自动改全局规则、不开远程 PR（[DP-31](https://weiperfect007.atlassian.net/browse/DP-31)）。开 PR 的授权条件标 `待证`，默认视为未授权，只在授权 worktree 产生产物。指向生产的 push / 合并 / 发布必须被拒，并写入 `snapshot.remote_write_rejections`。测试环境受控发布见 [DP-43](https://weiperfect007.atlassian.net/browse/DP-43)，必须落在授权目标 `test` 内；本票不实现该部署。
 
 ## 编排粒度（DP-26）
 
@@ -84,7 +85,7 @@ stateDiagram-v2
 | Reviewing | 双 Agent 并行输出阻断/建议/信息，并引用规则条文；无新证据即停 |
 | HumanGate | 人工 Signal `review_override`：放行进 Verifying、打回仅该 Ticket 回 Implementing、否决使该 Child 进 Blocked（父执行不自动 Blocked）。决策写入 `review.override`。未出 Signal 不越过，无超时自动放行 |
 | Verifying | 至少一行「红线 ↔ 证据」，命令或现象可复现；证据 UTF-8 落在授权 worktree，记录在 `snapshot.verify`。dry-run 或仅 History 不能标 PASS。未守住红线只打回该 Ticket。全部未移除 Ticket 过线且已授权后，由父执行从聚合 Implementing 进入 TestDeploying |
-| TestDeploying | 已收到 authorize_test_deploy；测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布 |
+| TestDeploying | 已收到 authorize_test_deploy；测试环境可达地址；失败则阻断，不得进入 Retro。禁止任何生产发布。测试环境部署本身见 DP-43；本阶段只拒绝生产 / 非测试目标 |
 | Retro | 写入 `docs/knowledge/daily/YYYY-MM-DD.md`（追加，不覆盖同日其他 Story），更新 candidates 的命中 / 硬近失；不得自动升 L0 / 全局 Skill。记录在 `snapshot.retro`。写完进 Done |
 
 ## 人工 Signal

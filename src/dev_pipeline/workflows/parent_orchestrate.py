@@ -33,6 +33,7 @@ from dev_pipeline.models import (
     is_complete_scope_lock,
     red_line_statements,
 )
+from dev_pipeline.remote_write import production_rejection
 from dev_pipeline.retro import (
     RetroEvidenceLine,
     RetroHypothesis,
@@ -408,7 +409,16 @@ class ParentOrchestrationMixin:
                 retry_policy=NO_RETRY,
             )
         except ActivityError as exc:
-            return await self._fail_test_deploy(f"测试部署失败，不得进入 Retro: {exc}")
+            message = f"测试部署失败，不得进入 Retro: {exc}"
+            if "禁止生产发布" in str(exc):
+                state.remote_write_rejections.append(
+                    production_rejection(
+                        "publish",
+                        request.target,
+                        reason=message,
+                    )
+                )
+            return await self._fail_test_deploy(message)
         if published.status != "succeeded":
             return await self._fail_test_deploy("测试部署失败，不得进入 Retro")
         state.test_deploy_status = TestDeployStatus.SUCCEEDED

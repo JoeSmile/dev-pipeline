@@ -262,12 +262,20 @@ async def test_empty_config_root_fails_workflow_visibly(
 
 
 async def test_production_publish_activity_is_rejected() -> None:
+    from dev_pipeline.remote_write_store import recorded_rejections
+
     env = ActivityEnvironment()
-    with pytest.raises(ProductionDeployForbidden, match="禁止生产发布"):
+    with pytest.raises(ProductionDeployForbidden, match="禁止生产发布") as exc:
         await env.run(
             publish_to_test_env,
-            PublishRequest(story_id="s", execution_id="e", target="production"),  # type: ignore[arg-type]
+            PublishRequest(story_id="s", execution_id="e", target="production"),
         )
+    assert exc.value.record is not None
+    journal = recorded_rejections()
+    assert journal
+    assert journal[-1].kind == "production"
+    assert journal[-1].performed is False
+    assert journal[-1].action == "publish"
 
 
 async def test_blocking_review_waits_for_human_gate(

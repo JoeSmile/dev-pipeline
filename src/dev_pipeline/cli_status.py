@@ -360,6 +360,23 @@ def format_status(snap: PipelineSnapshot) -> str:
         f"unresponsive_label={progress.unresponsive_label or ''}",
         f"recent_hints={json.dumps(progress.recent_hints, ensure_ascii=False)}",
     ]
+    if getattr(snap, "remote_write_rejections", None):
+        lines.append(
+            "remote_write_rejections="
+            + json.dumps(
+                [
+                    {
+                        "action": item.action,
+                        "target": item.target,
+                        "kind": item.kind,
+                        "performed": item.performed,
+                        "reason": item.reason,
+                    }
+                    for item in snap.remote_write_rejections
+                ],
+                ensure_ascii=False,
+            )
+        )
     return "\n".join(lines)
 
 

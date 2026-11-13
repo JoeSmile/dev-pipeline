@@ -29,6 +29,7 @@ from dev_pipeline.models import (
     TicketSpec,
 )
 from dev_pipeline.progress import ProgressSnapshot, last_failure_reason, waiting_confirmation
+from dev_pipeline.remote_write import RemoteWriteRejection
 from dev_pipeline.retro import PromotionRecord, RetroRecord
 from dev_pipeline.stages import IN_FLIGHT_TICKET_STAGES, ParentStage, TestDeployStatus, TicketStage
 from dev_pipeline.ticket_list import TICKET_WRITE_LAG_LABEL, is_complete_ticket_list
@@ -83,6 +84,7 @@ class ParentState:
         self.promotion: PromotionRecord | None = None
         self.abort_record: AbortRecord | None = None
         self.inherited: InheritedArtifacts | None = None
+        self.remote_write_rejections: list[RemoteWriteRejection] = []
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -308,4 +310,5 @@ class ParentState:
             progress=ProgressSnapshot(waiting_confirmation=waiting_text),
             abort_record=self.abort_record,
             inherited=self.inherited,
+            remote_write_rejections=list(self.remote_write_rejections),
         )

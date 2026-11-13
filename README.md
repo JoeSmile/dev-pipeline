@@ -20,7 +20,7 @@ Jira 项目：[dev-pipeline（DP）](https://weiperfect007.atlassian.net/jira/so
 
 父 Workflow `DevPipelineWorkflow` 只管阶段、门禁、Jira 同步、预算与幂等。一条父执行对应一张 Story。写码、RAG、双 Review、验证是 Activity 或 Child，不把 agent loop 写进 Workflow。每张实现 Ticket 由独立、可幂等的 Child（`TicketWorkflow`，幂等键 `ticket_id + execution_id`）执行。
 
-Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。按 Ticket 在授权 worktree 内交付可审查的本地分支、diff、单测证据和回滚说明，齐了才进入 Reviewing；缺项不得进入 Reviewing。默认不自动 push / 合并，未授权时不开远程 PR。进入 Reviewing 后，两个 Review Worker 并行只读审查 diff、L0 与本 Story 局部约束，结论分为阻断 / 建议 / 信息并引用规则条文；无新证据就停，不追加审查轮次。任一阻断或范式漂移、以及两条都阻断且理由冲突时，进入 HumanGate，由人裁，Workflow 不做自动仲裁。仅建议或信息时可直达 Verifying。单文件超过 2000 行必须视为阻断，不得用建议项放行。Review Worker 写入工作区必须被拒，工作区保持不变。一期 Cursor CLI 审查命令约定见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留 `agent -p --mode=ask`，不调用现场 CLI。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
+Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `HumanGate`）→ `Verifying`；父执行在 `TicketsReady` 之后以聚合阶段 `Implementing` 等待。启动清单里的每张 Ticket 都是必做的；只有 `drop_ticket` 能在启动后把它从清单中移除。全部未移除 Ticket 验证过线后，父执行等候人工 Signal `authorize_test_deploy`，授权后才进入 `TestDeploying` 并发布到测试环境。Coding Worker 只碰授权 worktree；试图写到授权路径之外会被拒绝，并记入既有查询快照。按 Ticket 在授权 worktree 内交付可审查的本地分支、diff、单测证据和回滚说明，齐了才进入 Reviewing；缺项不得进入 Reviewing。默认不自动 push / 合并，未授权时不开远程 PR；指向生产的 push / 合并 / 发布必须被拒并留记录（[DP-31](https://weiperfect007.atlassian.net/browse/DP-31)）。进入 Reviewing 后，两个 Review Worker 并行只读审查 diff、L0 与本 Story 局部约束，结论分为阻断 / 建议 / 信息并引用规则条文；无新证据就停，不追加审查轮次。任一阻断或范式漂移、以及两条都阻断且理由冲突时，进入 HumanGate，由人裁，Workflow 不做自动仲裁。仅建议或信息时可直达 Verifying。单文件超过 2000 行必须视为阻断，不得用建议项放行。Review Worker 写入工作区必须被拒，工作区保持不变。一期 Cursor CLI 审查命令约定见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留 `agent -p --mode=ask`，不调用现场 CLI。互辩 / RAG / 多模型的预算闸门挂在父 Workflow：超限即停并记一条 Bad。
 
 多 Ticket 按依赖拓扑执行：无依赖可并行；有依赖的 Ticket 不得提前开工（Child 直接启动且依赖未过线时停在 `Pending`）。单张失败不自动取消同 Story 其他未受影响的 Ticket，但 Story 不能进入 `TestDeploying` 或 `Retro`，直到失败被处理。处理路径只有现有 Signal，不另开第二套机制：打回重做（`review_override` 打回或验证未过线只让该 Ticket 回到 `Implementing`；已 Failed / 否决 Blocked 的票用同一次执行内的 `retry_ticket`）、人工放弃并改清单（`drop_ticket`；`submit_tickets` 只用于 `TicketsReady` 补齐清单，清单齐后不能再用它改写清单），或对 Story `abort`。
 
@@ -33,6 +33,12 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 - **不同 `execution_id`（含 `reopen`）**：这是新一次执行、新键。不得继跑旧 execution，也不得复用旧工作区声明。
 
 `retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`。写码交付的分支名由 `ticket_id + execution_id` 推导，同键重跑复用该本地分支，不新开远程 PR、不改乱分支。未合并 worktree / 本地分支在 `abort` 后按 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30) 回收；已有远程 PR 不自动关闭或合并，只记录待人工处理（标记方式待证）。开 PR 的授权条件见 [DP-31](https://weiperfect007.atlassian.net/browse/DP-31)（待证），默认视为未授权。一期写码 Activity 调 Cursor CLI 见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留命令约定，不调用现场 CLI。
+
+## 默认不自动 push / 合并（DP-31）
+
+写码验收默认关闭远端写：不自动 `push`、不自动合并、不自动改全局 Git 规则，也不自动打开远程 PR。未授权时只在授权 worktree 内产生产物。开远程 PR 的授权条件仍为 `待证`，默认视为未授权；本阶段不产品化授权流程。
+
+指向生产的发布，或对生产远程 / 生产分支的 push / 合并，必须被拒绝，并在查询快照 `remote_write_rejections`（以及可选的证据文件）留下记录，且不得把该写标记为已执行。测试环境受控发布是例外，必须落在授权目标 `test` 内，由 [DP-43](https://weiperfect007.atlassian.net/browse/DP-43) 另述；本仓库现有 `publish_to_test_env` 只是桩，本票不实现测试环境部署。
 
 ## 预算闸门（DP-12）
 

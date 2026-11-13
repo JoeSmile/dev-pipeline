@@ -29,7 +29,7 @@ New-Item -ItemType Directory -Force -Path D:\pipeline-config
 
 该目录还可选包含 `spike.toml`（可从仓库 `docs/examples/spike.toml` 复制），用于配置可选 Spike 的可证伪时限（`timeout_seconds`，大于 0 的整数）。缺少该文件时使用待证占位默认 4 小时，不是已签批的正式 SLA。文件存在但内容非法时，Spike 活动会以中文错误失败，不会假装已有正式时限。
 
-该目录还可选包含 `workspace.toml`（可从仓库 `docs/examples/workspace.toml` 复制），用于声明写码沙箱的授权工作区根目录 `authorized_root`（必须是已存在的绝对目录）。每张票的授权 worktree 为 `<authorized_root>/<ticket_id>/<execution_id>`。缺少该文件时默认未授权，沙箱拒绝任何写入。文件存在但内容非法时，工作区声明活动会以中文错误失败，不会偷偷写到未授权路径。Worker 与 CLI 默认不对外部或远端仓库开放写权限；未确认 L0 前不默认向目标 Story 远程仓库 push 或开 PR（见 [DP-20](https://weiperfect007.atlassian.net/browse/DP-20)、[DP-31](https://weiperfect007.atlassian.net/browse/DP-31)，默认未授权 / 待证）。不要把 `D:\projects\dev-pipeline` 本身当成目标 Story 的 worktree。
+该目录还可选包含 `workspace.toml`（可从仓库 `docs/examples/workspace.toml` 复制），用于声明写码沙箱的授权工作区根目录 `authorized_root`（必须是已存在的绝对目录）。每张票的授权 worktree 为 `<authorized_root>/<ticket_id>/<execution_id>`。缺少该文件时默认未授权，沙箱拒绝任何写入。文件存在但内容非法时，工作区声明活动会以中文错误失败，不会偷偷写到未授权路径。Worker 与 CLI 默认不对外部或远端仓库开放写权限；默认不向目标 Story 远程仓库 push、合并或开 PR（见 [DP-20](https://weiperfect007.atlassian.net/browse/DP-20)、[DP-31](https://weiperfect007.atlassian.net/browse/DP-31)）。开 PR 的授权条件仍为待证，默认视为未授权。指向生产的 push / 合并 / 发布会被拒绝并留下记录。不要把 `D:\projects\dev-pipeline` 本身当成目标 Story 的 worktree。
 
 ```powershell
 Copy-Item .\docs\examples\budget.toml D:\pipeline-config\budget.toml

@@ -54,3 +54,12 @@ async def workflow_env() -> AsyncIterator[WorkflowEnvironment]:
         return
     async with await WorkflowEnvironment.start_time_skipping() as env:
         yield env
+
+
+@pytest.fixture(autouse=True)
+def _reset_remote_write_journal() -> Iterator[None]:
+    from dev_pipeline.remote_write_store import reset_recorded_rejections
+
+    reset_recorded_rejections()
+    yield
+    reset_recorded_rejections()
