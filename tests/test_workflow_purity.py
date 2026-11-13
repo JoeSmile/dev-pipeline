@@ -39,6 +39,7 @@ FORBIDDEN_MODULES = frozenset(
         "dev_pipeline.verify_cli_adapter",
         "dev_pipeline.retro_backend",
         "dev_pipeline.worktree_recycle",
+        "dev_pipeline.remote_pr",
         "dev_pipeline.progress_log",
         "dev_pipeline.cli_status",
         "dev_pipeline.cli_status_follow",

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from dev_pipeline.abort_record import AbortRecord
+    from dev_pipeline.inheritance import InheritedArtifacts
+
 
 from dev_pipeline.budget import BudgetSnapshot
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
@@ -148,6 +153,7 @@ class StoryInput:
     summary: str = ""
     intake: IntakeRecord | None = None
     inherited_scope: ScopeLock | None = None
+    inherited: InheritedArtifacts | None = None
     auto_start_children: bool = False
     sandbox_write: SandboxWriteSpec | None = None
 
@@ -316,7 +322,8 @@ class TicketDeliverables:
 
     Completeness requires a derivable local branch, a reviewable diff, unit-test
     evidence, and rollback notes. Default is no remote push, merge, or PR.
-    ``pr_authorization`` and ``worktree_recycle`` stay 待证 until DP-31 / DP-30.
+    ``pr_authorization`` stays 待证 until DP-31. ``worktree_recycle`` is a
+    deliverable-time marker; abort recycles this execution's unmerged trees.
     """
 
     branch_name: str = ""
@@ -488,6 +495,7 @@ class ReopenStartInput:
     summary: str = ""
     intake: IntakeRecord | None = None
     inherited_scope: ScopeLock | None = None
+    inherited: InheritedArtifacts | None = None
     auto_start_children: bool = False
 
 
@@ -615,6 +623,8 @@ class PipelineSnapshot:
     promotion: PromotionRecord | None = None
     last_failure_reason: str | None = None
     progress: ProgressSnapshot | None = None
+    abort_record: AbortRecord | None = None
+    inherited: InheritedArtifacts | None = None
 
 
 @dataclass
@@ -653,3 +663,9 @@ def story_workflow_id(story_id: str, execution_id: str) -> str:
     """Workflow id for one parent Story execution."""
 
     return f"story-{story_id}-{execution_id}"
+
+# Dedicated cleanup / inheritance types live outside this module (DP-30).
+# Imported last so those modules can reuse ScopeLock / SchemeDecision here.
+from dev_pipeline.abort_record import AbortRecord as AbortRecord  # noqa: E402
+from dev_pipeline.inheritance import InheritedArtifacts as InheritedArtifacts  # noqa: E402
+

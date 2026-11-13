@@ -1,6 +1,7 @@
 """Activity entrypoints. Workflows import these through the Temporal sandbox escape hatch."""
 
 from dev_pipeline.activities.budget import load_budget_config, run_debate, run_model_call, run_rag
+from dev_pipeline.activities.cleanup import recycle_aborted_execution_activity
 from dev_pipeline.activities.config import validate_config_root
 from dev_pipeline.activities.jira_mirror import mark_jira_mirror_lag, mirror_parent_stage
 from dev_pipeline.activities.jira_tickets import persist_jira_tickets
@@ -34,6 +35,7 @@ STUB_ACTIVITIES = (
     publish_to_test_env,
     apply_promote_rule,
     write_retro_record,
+    recycle_aborted_execution_activity,
 )
 
 __all__ = [
@@ -58,4 +60,5 @@ __all__ = [
     "validate_config_root",
     "verify_ticket",
     "write_retro_record",
+    "recycle_aborted_execution_activity",
 ]

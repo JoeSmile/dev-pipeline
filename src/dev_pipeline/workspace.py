@@ -1,8 +1,9 @@
 """In-memory workspace / side-effect claims keyed by ticket_id + execution_id.
 
 The authorized worktree path is recorded here; guarded writes live in the
-coding sandbox (DP-20). Real git / GitHub PRs and worktree cleanup remain
-out of scope (see DP-30). Claims never point at a shared mainline branch:
+coding sandbox (DP-20). Abort recycles this execution's unmerged worktrees
+and local branches (DP-30) without closing or merging existing remote PRs.
+Claims never point at a shared mainline branch:
 every identity includes ``execution_id``.
 """
 

@@ -32,7 +32,7 @@ Child 循环是 `Pending` → `Implementing` → `Reviewing` →（必要时 `Hu
 - **同键、已完成**：返回已有结果，不开新分支 / PR / worktree 声明。
 - **不同 `execution_id`（含 `reopen`）**：这是新一次执行、新键。不得继跑旧 execution，也不得复用旧工作区声明。
 
-`retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`。写码交付的分支名由 `ticket_id + execution_id` 推导，同键重跑复用该本地分支，不新开远程 PR、不改乱分支。未合并 worktree 的回收见 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30)（待证）。开 PR 的授权条件见 [DP-31](https://weiperfect007.atlassian.net/browse/DP-31)（待证），默认视为未授权。一期写码 Activity 调 Cursor CLI 见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留命令约定，不调用现场 CLI。
+`retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`。写码交付的分支名由 `ticket_id + execution_id` 推导，同键重跑复用该本地分支，不新开远程 PR、不改乱分支。未合并 worktree / 本地分支在 `abort` 后按 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30) 回收；已有远程 PR 不自动关闭或合并，只记录待人工处理（标记方式待证）。开 PR 的授权条件见 [DP-31](https://weiperfect007.atlassian.net/browse/DP-31)（待证），默认视为未授权。一期写码 Activity 调 Cursor CLI 见 [DP-46](https://weiperfect007.atlassian.net/browse/DP-46)，本阶段只预留命令约定，不调用现场 CLI。
 
 ## 预算闸门（DP-12）
 
@@ -164,7 +164,7 @@ stateDiagram-v2
 | 阶段 | 输入 | 输出（进下一阶段的硬条件） |
 |---|---|---|
 | Intake | Jira key、reporter、原始诉求 | 规范化 Story 草稿（`snapshot.story_draft`：要解决什么、已知约束、缺项列表）；缺项标 `待证`，无臆造验收。草稿是 `lock_scope` 的输入，本阶段不锁范围 |
-| ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么已写入执行记录（含锁定人、时间），可供 Query 与 `reopen` 只读继承；禁止未锁范围就开编码 |
+| ScopeLocked | L0 Rule/Skill + Story 草稿 | 要解决 / 不做什么已写入执行记录（含锁定人、时间），可供 Query 与 `reopen` 只读继承（方案、假设与已关闭 Ticket 证据见 DP-30）；禁止未锁范围就开编码 |
 | SchemeDecided | 范围 + RAG 规范/历史事故 | 取舍记录（`snapshot.scheme`：取舍说明、假设清单分级为红线级 / 局部 / 候选、拍板人、时间、检索为桩或真实命中）；无红线级可直达 TicketsReady |
 | Spike（可选） | 红线级假设 | 可证伪结论写入 `snapshot.spike`；时限由可选 `spike.toml` 配置（缺省为待证占位，示例为半小时～半天中的 4 小时）。验证过则进 TicketsReady；击穿红线且无防护，或超时未验证，进入 Blocked；有防护时须经 `approve_spike` 才能进 TicketsReady。过线后不直接 Implementing，不派 Coding Child |
 | TicketsReady | 已拍方案 | Ticket 清单：目标、验收、依赖、I/O 契约；清单齐才能进 Implementing 并为每张必做票建立 Child。清单未齐时等候 `submit_tickets`。票写入 Jira 项目 `DP`，不写 `TASKS.md` |
@@ -188,7 +188,7 @@ stateDiagram-v2
 - `retry_ticket` / `drop_ticket`：重试失败 Ticket，或把它从清单中移除
 - `abort` / `reopen`：中止或重开同一 Ticket / Story（必须开新 execution，不复用已乱掉的一次）
 
-`abort` 会取消仍在运行的 Child，把父执行带入 `Blocked`，并留下可回放记录。本骨架尚未回收 worktree / 处理远程 PR（见 [DP-30](https://weiperfect007.atlassian.net/browse/DP-30)）。`reopen` 只在 `Blocked` 或 `Done` 时接受，且必须带一个不同于当前的新 `execution_id`；接受后由 Activity 启动一条独立的新父执行，旧执行保持终态、不会被继跑。若旧执行已锁定范围，新执行只读继承该记录（要解决 / 不做什么 / 锁定人 / 时间），不再等待 `lock_scope`，也不得改写已锁范围。仍在运行时 reopen 会被拒绝（须先 `abort`）。错误阶段或非法 payload 的 Signal 一律拒绝，记入可查询的 `last_rejection`，不改变当前阶段。
+`abort` 会取消仍在运行的 Child，把父执行带入 `Blocked`，留下可回放的 `snapshot.abort_record`，并由 Activity 回收本 execution 创建的未合并 worktree / 本地分支。History 仍可回放，不会被删除。已有远程 PR 不自动关闭或合并，只在 snapshot 上记录待人工处理（标记方式待证）。`reopen` 只在 `Blocked` 或 `Done` 时接受，且必须带一个不同于当前的新 `execution_id`；接受后由 Activity 启动一条独立的新父执行，旧执行保持终态、不会被继跑，也不会再写入旧工作区。新执行使用新的工作区路径，并只读继承已锁范围、方案、假设，以及已关闭 Ticket 的证据；不得复用已乱掉的旧工作区，也不得把旧的 `review_override` / `promote_rule` 当成新裁决重放。仍在运行时 reopen 会被拒绝（须先 `abort`）。错误阶段或非法 payload 的 Signal 一律拒绝，记入可查询的 `last_rejection`，不改变当前阶段。
 
 ### Signal payload schema
 

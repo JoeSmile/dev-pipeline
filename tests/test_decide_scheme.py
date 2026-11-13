@@ -270,7 +270,7 @@ async def test_client_supplied_time_and_retrieval_hit_are_ignored(
         await worker.__aexit__(None, None, None)
 
 
-async def test_reopen_does_not_inherit_scheme_decision(
+async def test_reopen_inherits_scheme_decision_read_only(
     local_env: WorkflowEnvironment, tmp_config_root: Path
 ) -> None:
     payload = _story(tmp_config_root)
@@ -283,6 +283,7 @@ async def test_reopen_does_not_inherit_scheme_decision(
         )
         snap = await wait_snapshot(handle, lambda item: item.stage is ParentStage.TICKETS_READY)
         assert snap.scheme is not None
+        locked = snap.scheme
         await handle.signal(DevPipelineWorkflow.abort, AbortRequest(reason="stop-after-scheme"))
         await wait_terminal(handle)
         new_id = f"{payload.execution_id}-reopen-scheme"
@@ -293,13 +294,30 @@ async def test_reopen_does_not_inherit_scheme_decision(
         )
         new_snap = await wait_snapshot(
             new_handle,
-            lambda item: (
-                item.stage is ParentStage.SCOPE_LOCKED
-                and item.waiting_signal == "decide_scheme"
-                and item.scope is not None
-            ),
+            lambda item: item.scheme is not None and item.stage is ParentStage.TICKETS_READY,
         )
-        assert new_snap.scheme is None
         assert new_snap.execution_id == new_id
+        assert new_snap.scheme is not None
+        assert new_snap.scheme.tradeoff == locked.tradeoff
+        assert new_snap.scheme.decided_by == locked.decided_by
+        assert new_snap.scheme.decided_at == locked.decided_at
+        assert [item.statement for item in new_snap.scheme.hypotheses] == [
+            item.statement for item in locked.hypotheses
+        ]
+        await new_handle.signal(
+            DevPipelineWorkflow.decide_scheme,
+            scheme_decision(payload, decided_by="他人", tradeoff="改掉方案"),
+        )
+        rejected = await wait_snapshot(
+            new_handle,
+            lambda item: item.last_rejection is not None
+            and item.last_rejection.signal == "decide_scheme",
+        )
+        assert rejected.scheme is not None
+        assert rejected.scheme.tradeoff == locked.tradeoff
+        await new_handle.signal(
+            DevPipelineWorkflow.abort, AbortRequest(reason="stop-reopened-scheme")
+        )
+        await wait_terminal(new_handle)
     finally:
         await worker.__aexit__(None, None, None)

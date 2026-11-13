@@ -62,13 +62,14 @@ stateDiagram-v2
 
 - Ticket 按依赖拓扑执行：无依赖的 Ticket 可并行启动；依赖未过线的 Ticket 不得提前开工。
 - 单张 Child 失败（实现失败、验证未过线打回 Implementing、或否决进入 Blocked）不自动取消同 Story 其他未受影响的 Ticket。父执行在失败被处理前不得进入 `TestDeploying` 或 `Retro`。全部未移除的必做 Ticket 验证过线后才允许进 Retro。
-- 失败处理路径：打回重做（`review_override` 打回或验证未过线只让该 Ticket 回到 `Implementing`；已 Failed / 否决 Blocked 的票用同一次执行内的 `retry_ticket`）、人工放弃并改清单（`drop_ticket`；`submit_tickets` 只用于 TicketsReady 补齐清单，清单齐后不能再用它改写清单），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`；这不是单张失败后的自动取消。
+- 失败处理路径：打回重做（`review_override` 打回或验证未过线只让该 Ticket 回到 `Implementing`；已 Failed / 否决 Blocked 的票用同一次执行内的 `retry_ticket`）、人工放弃并改清单（`drop_ticket`；`submit_tickets` 只用于 TicketsReady 补齐清单，清单齐后不能再用它改写清单），或对 Story `abort`。`abort` 会取消仍在运行的 Child，再以可回放结果进入 `Blocked`，并回收本 execution 创建的未合并工作区；已有远程 PR 待人工处理（标记方式待证）。这不是单张失败后的自动取消。
 - 幂等键：`ticket_id+execution_id`（`ticket_workflow_id`，同时用作 Child workflow id）。Child 启动使用 `REJECT_DUPLICATE`，第二次启动会附着到已有 execution，而不是再开一个 Child。
   - 同键、仍在进行中：视为重入，不创建第二份副作用（工作区 / 分支 / PR 声明）。
   - 同键、已完成：返回已有结果，不开新分支 / PR / worktree。
   - 不同 `execution_id`（含 `reopen`）：新键、新工作区声明；不得继跑或 signal 旧 Child。
 - `retry_ticket` 是同一次执行内对同一 Child 的重试，不分配新的 `execution_id`，也不再声明一份工作区。
-- `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。只在 `Blocked` 或 `Done` 时接受；由 Activity `start_reopened_workflow` 用 Temporal Client 启动独立新执行（不用 Continue-As-New，也不作为会随父关闭而结束的 Child）。
+- `reopen` 必须使用新的 `execution_id` 启动新的父执行，不能在已损坏的本次执行上恢复。只在 `Blocked` 或 `Done` 时接受；由 Activity `start_reopened_workflow` 用 Temporal Client 启动独立新执行（不用 Continue-As-New，也不作为会随父关闭而结束的 Child）。新执行只读继承范围、方案、假设和已关闭 Ticket 的证据，使用新工作区，不再写入旧 execution。
+- `abort` 会取消仍在运行的 Child，写入可回放的 `abort_record`，并由 Activity `recycle_aborted_execution` 回收本 execution 创建的未合并 worktree / 本地分支。已有远程 PR 不关闭也不合并，只记录待人工处理（标记方式待证）。History 不予删除。
 
 ## 契约摘要
 

@@ -7,6 +7,7 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
+from dev_pipeline.inheritance import InheritedArtifacts, build_inherited_artifacts
 from dev_pipeline.models import PipelineResult, ReopenStartInput, ReopenStartResult
 from dev_pipeline.workflows.parent_state import ParentState
 
@@ -53,6 +54,7 @@ class ParentReopenMixin:
                 summary=payload.summary,
                 intake=payload.intake,
                 inherited_scope=state.scope,
+                inherited=_inherited_for_reopen(state),
                 auto_start_children=payload.auto_start_children,
             ),
             start_to_close_timeout=REOPEN_START_TIMEOUT,
@@ -68,3 +70,16 @@ class ParentReopenMixin:
         state.record_rejection("reopen", outcome.error or "启动新执行失败")
         state.reopen_status = outcome.error
         state.reopen_request = None
+
+
+def _inherited_for_reopen(state: ParentState) -> InheritedArtifacts:
+    """Build allowed read-only artifacts for the new execution."""
+
+    spike_statement = "" if state.spike is None else state.spike.statement
+    return build_inherited_artifacts(
+        scope=state.scope,
+        scheme=state.scheme,
+        tickets=list(state.ticket_list()),
+        spike_statement=spike_statement,
+    )
+

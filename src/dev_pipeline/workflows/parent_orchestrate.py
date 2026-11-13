@@ -11,7 +11,9 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, TemporalError
 from temporalio.workflow import ChildWorkflowCancellationType, ParentClosePolicy
 
+from dev_pipeline.abort_record import AbortCleanupInput, AbortRecord, AbortWorkspaceTarget
 from dev_pipeline.constants import TEST_PUBLISH_TARGET
+from dev_pipeline.inheritance import coalesce_inherited, copy_scheme_decision
 from dev_pipeline.models import (
     SPIKE_BROKEN,
     SPIKE_OVERRUN,
@@ -19,6 +21,7 @@ from dev_pipeline.models import (
     PipelineResult,
     PublishRequest,
     PublishResult,
+    SchemeDecision,
     ScopeLock,
     SpikeInput,
     SpikeRecord,
@@ -98,6 +101,7 @@ class ParentOrchestrationMixin:
     async def _bootstrap(self, payload: StoryInput) -> None:
         self._state.input = payload
         self._state.install_tickets(payload.tickets)
+        self._install_inherited(payload)
         await workflow.execute_activity(
             validate_config_root,
             payload.config_root,
@@ -125,6 +129,8 @@ class ParentOrchestrationMixin:
         if inherited is not None:
             state.scope = inherited
             await self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
+            if self._inherited_scheme() is not None:
+                return
             state.waiting = "decide_scheme"
             return
         state.waiting = "lock_scope"
@@ -134,23 +140,44 @@ class ParentOrchestrationMixin:
         await self._move(ParentStage.SCOPE_LOCKED, "lock_scope")
         state.waiting = "decide_scheme"
 
+    def _install_inherited(self, payload: StoryInput) -> None:
+        """Expose allowed read-only artifacts on the new execution snapshot."""
+        inherited = coalesce_inherited(payload.inherited, payload.inherited_scope)
+        self._state.inherited = inherited
+
     def _inherited_scope(self) -> ScopeLock | None:
         """Return a complete inherited lock, or None when reopen has nothing to copy."""
+        inherited = self._state.inherited
+        if inherited is not None and inherited.scope is not None:
+            return inherited.scope
         payload = self._state.input
-        if payload is None or payload.inherited_scope is None:
+        if payload is None:
             return None
-        inherited = payload.inherited_scope
-        if not is_complete_scope_lock(inherited):
+        scope = payload.inherited_scope
+        if scope is None or not is_complete_scope_lock(scope):
             return None
         return ScopeLock(
-            in_scope=inherited.in_scope,
-            out_of_scope=inherited.out_of_scope,
-            locked_by=inherited.locked_by,
-            locked_at=inherited.locked_at,
+            in_scope=scope.in_scope,
+            out_of_scope=scope.out_of_scope,
+            locked_by=scope.locked_by,
+            locked_at=scope.locked_at,
         )
+
+    def _inherited_scheme(self) -> SchemeDecision | None:
+        """Return a complete inherited scheme, or None when none was provided."""
+        inherited = self._state.inherited
+        if inherited is None:
+            return None
+        return copy_scheme_decision(inherited.scheme)
 
     async def _wait_for_scheme(self) -> None:
         state = self._state
+        inherited_scheme = self._inherited_scheme()
+        if inherited_scheme is not None:
+            state.scheme = inherited_scheme
+            await self._move(ParentStage.SCHEME_DECIDED, "decide_scheme")
+            state.waiting = None
+            return
         await workflow.wait_condition(lambda: state.scheme is not None or state.abort_requested)
         if state.abort_requested:
             return
@@ -416,9 +443,32 @@ class ParentOrchestrationMixin:
 
     async def _block(self, reason: str) -> PipelineResult:
         await self._stop_children()
+        await self._recycle_aborted_execution(reason)
         if self._state.stage is not ParentStage.BLOCKED:
             await self._move(ParentStage.BLOCKED, "abort")
         return await self._finish_terminal(self._state.finish_blocked(reason))
+
+    async def _recycle_aborted_execution(self, reason: str) -> None:
+        """Persist a replayable abort record and recycle this execution's trees."""
+        state = self._state
+        payload = state.input
+        if payload is None:
+            return
+        outcome = await workflow.execute_activity(
+            "recycle_aborted_execution",
+            AbortCleanupInput(
+                story_id=payload.story_id,
+                execution_id=payload.execution_id,
+                config_root=payload.config_root,
+                reason=reason,
+                aborted_at=format_scope_lock_time(workflow.now()),
+                workspaces=_abort_workspace_targets(state),
+            ),
+            start_to_close_timeout=ACTIVITY_TIMEOUT,
+            retry_policy=NO_RETRY,
+            result_type=AbortRecord,
+        )
+        state.abort_record = outcome
 
     async def _stop_children(self) -> None:
         """Signal abort and cancel every running child before the parent blocks."""
@@ -488,3 +538,38 @@ def _retro_input(state: ParentState, now: object) -> RetroInput:
         tickets=tickets,
         hypotheses=hypotheses,
     )
+
+
+def _abort_workspace_targets(state: ParentState) -> list[AbortWorkspaceTarget]:
+    """Collect claimed worktrees and branches for the current execution."""
+
+    payload = state.input
+    execution_id = "" if payload is None else payload.execution_id
+    targets: list[AbortWorkspaceTarget] = []
+    for item in state.ticket_list():
+        deliverables = item.deliverables
+        worktree = ""
+        branch = ""
+        pr_url = ""
+        pr_opened = False
+        if item.sandbox is not None:
+            worktree = item.sandbox.authorized_worktree
+        if deliverables is not None:
+            worktree = deliverables.worktree or worktree
+            branch = deliverables.branch_name
+            pr_url = deliverables.remote_pr_url
+            pr_opened = deliverables.remote_pr_opened
+        if not worktree and not branch and not pr_url:
+            continue
+        targets.append(
+            AbortWorkspaceTarget(
+                ticket_id=item.ticket_id,
+                execution_id=execution_id,
+                worktree=worktree,
+                branch_name=branch,
+                remote_pr_url=pr_url,
+                remote_pr_opened=pr_opened,
+            )
+        )
+    return targets
+

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from temporalio import activity
 
+from dev_pipeline.activities.cleanup import recycle_aborted_execution_activity
 from dev_pipeline.activities.retro import apply_promote_rule
 from dev_pipeline.activities.sandbox import apply_sandbox_write
 from dev_pipeline.budget import BudgetAmounts, BudgetConfig, CostlyPathInput, CostlyPathResult
@@ -392,4 +393,5 @@ class StubController:
             publish_to_test_env,
             apply_promote_rule,
             write_retro_record,
+            recycle_aborted_execution_activity,
         )

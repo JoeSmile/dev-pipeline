@@ -46,6 +46,7 @@ class ReopenStarter:
             summary=payload.summary,
             intake=payload.intake,
             inherited_scope=payload.inherited_scope,
+            inherited=payload.inherited,
             auto_start_children=payload.auto_start_children,
         )
         try:

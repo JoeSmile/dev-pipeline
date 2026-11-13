@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dev_pipeline.abort_record import AbortRecord
 from dev_pipeline.budget import (
     BudgetAmounts,
     BudgetBreach,
@@ -10,6 +11,7 @@ from dev_pipeline.budget import (
     build_budget_snapshot,
 )
 from dev_pipeline.constants import WAITING_AUTHORIZE_TEST_DEPLOY
+from dev_pipeline.inheritance import InheritedArtifacts
 from dev_pipeline.jira_mirror import LAG_MARKER_LABEL
 from dev_pipeline.models import (
     JiraMirrorSnapshot,
@@ -79,6 +81,8 @@ class ParentState:
         self.jira_tickets: JiraTicketWriteSnapshot | None = None
         self.retro: RetroRecord | None = None
         self.promotion: PromotionRecord | None = None
+        self.abort_record: AbortRecord | None = None
+        self.inherited: InheritedArtifacts | None = None
 
     def install_tickets(self, specs: list[TicketSpec]) -> None:
         """Replace the ticket list from a start payload or scheme decision."""
@@ -302,4 +306,6 @@ class ParentState:
                 budget_breach_reason=breach,
             ),
             progress=ProgressSnapshot(waiting_confirmation=waiting_text),
+            abort_record=self.abort_record,
+            inherited=self.inherited,
         )
