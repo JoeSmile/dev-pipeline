@@ -44,7 +44,13 @@ async def wait_snapshot(
         if predicate(last):  # type: ignore[operator]
             return last
         await asyncio.sleep(0.05)
-    raise AssertionError(f"timeout waiting for snapshot, last={last}")
+    tickets = ""
+    if last is not None:
+        tickets = "; tickets=" + ", ".join(
+            f"{item.ticket_id}:{item.stage!r}:{type(item.stage).__module__}.{type(item.stage).__qualname__}"
+            for item in last.tickets
+        )
+    raise AssertionError(f"timeout waiting for snapshot{tickets}, last={last}")
 
 
 def scope_lock(

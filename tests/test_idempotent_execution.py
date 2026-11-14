@@ -50,6 +50,19 @@ from dev_pipeline.workspace import MAINLINE_BRANCH
 
 pytestmark = pytest.mark.asyncio
 
+
+def _stage_matches(got: object, expected: TicketStage) -> bool:
+    """Compare ticket stages by value, not identity.
+
+    Workflow Query results can deserialize to an equivalent enum instance
+    that is not the same object as the test process member, so ``is``
+    can fail even when the snapshot already shows the expected stage.
+    """
+
+    return got == expected or getattr(got, "value", got) == expected.value
+
+
+
 REJECT_DUPLICATE = int(WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
 
 
@@ -292,8 +305,8 @@ async def test_ticket_failure_does_not_damage_sibling_claim_or_mainline(
         snap = await wait_snapshot(
             handle,
             lambda item: (
-                stage_of(item, "A") is TicketStage.FAILED
-                and stage_of(item, "B") is TicketStage.VERIFIED
+                _stage_matches(stage_of(item, "A"), TicketStage.FAILED)
+                and _stage_matches(stage_of(item, "B"), TicketStage.VERIFIED)
             ),
         )
         claim_a = controller.workspace.get("A", payload.execution_id)
@@ -324,7 +337,10 @@ async def test_retry_ticket_does_not_allocate_a_second_workspace_identity(
     worker, handle = await start_parent(workflow_env, payload, controller)
     try:
         await advance_to_implementing(handle, payload)
-        await wait_snapshot(handle, lambda item: stage_of(item, "A") is TicketStage.FAILED)
+        await wait_snapshot(
+            handle,
+            lambda item: _stage_matches(stage_of(item, "A"), TicketStage.FAILED),
+        )
         first = controller.workspace.get("A", payload.execution_id)
         assert first is not None
         assert controller.workspace.created_count("A", payload.execution_id) == 1
